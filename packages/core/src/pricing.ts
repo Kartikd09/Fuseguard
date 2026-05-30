@@ -47,6 +47,8 @@ const CACHE_WRITE_MULTIPLIER = 1.25;
 const CACHE_READ_MULTIPLIER = 0.1;
 
 // Unknown model ⇒ fail-closed: price as the most-expensive known model (ARCHITECTURE §3).
+// The floor is intentionally the legacy-Opus rate ($15/$75 — the table max). If legacy Opus
+// is ever removed, pin the floor explicitly so it doesn't silently drop and under-reserve.
 // Throws if the table is empty — returning 0 would silently un-fail-closed (charge nothing).
 function mostExpensive(kind: PriceKind): number {
   const prices = Object.values(PRICING);

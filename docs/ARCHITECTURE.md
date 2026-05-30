@@ -78,8 +78,8 @@ Two measurements per call:
   when present). This is the authoritative cost written to `usage_events` and used to release the
   unused portion of the reservation back into the DO counter.
 
-**Pricing table as config** (`packages/core/src/pricing.ts`, USD per 1M tokens — verify against
-Anthropic's live pricing at build time; values illustrative):
+**Pricing table as config** (`packages/core/src/pricing.ts`, USD per 1M tokens — kept current
+with Anthropic's published rates; re-verify on each model launch):
 
 ```ts
 // USD per 1M tokens — verified against Anthropic pricing 2026-05-31. Aliases + dated IDs both listed.
