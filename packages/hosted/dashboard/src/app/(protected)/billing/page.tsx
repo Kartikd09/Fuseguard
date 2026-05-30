@@ -42,13 +42,15 @@ export default async function BillingPage() {
   const { data: membership } = await supabase
     .from("memberships").select("org_id").eq("user_id", user?.id ?? "").limit(1).maybeSingle();
   const orgId = (membership as { org_id: string } | null)?.org_id ?? "";
-  const checkoutUrl = orgId
-    ? `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[custom][org_id]=${encodeURIComponent(orgId)}`
-    : LEMON_SQUEEZY_CHECKOUT_URL;
+  let checkoutUrl = LEMON_SQUEEZY_CHECKOUT_URL;
+  if (orgId) {
+    const u = new URL(LEMON_SQUEEZY_CHECKOUT_URL);
+    u.searchParams.set("checkout[custom][org_id]", orgId);
+    checkoutUrl = u.toString();
+  }
 
   // Pro = active subscription on the pro plan (not just any active subscription).
-  const isPro = subscription?.status === "active" &&
-    (subscription as unknown as { plans?: { name: string } })?.plans?.name === "pro";
+  const isPro = subscription?.status === "active" && subscription?.plans?.name === "pro";
   const renewsAt = subscription?.renews_at
     ? new Intl.DateTimeFormat("en-US", {
         month: "long",

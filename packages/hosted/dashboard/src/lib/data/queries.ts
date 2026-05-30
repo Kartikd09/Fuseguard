@@ -89,7 +89,7 @@ export async function fetchBlocks(
 /** Fetch subscription + plan for the org. */
 export async function fetchSubscription(
   supabase: SupabaseClient
-): Promise<(Subscription & { plan_name?: string }) | null> {
+): Promise<Subscription | null> {
   const { data, error } = await supabase
     .from("subscriptions")
     .select("*, plans(name)")

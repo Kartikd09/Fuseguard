@@ -10,7 +10,7 @@ token/$ budgets at runtime — blocks calls *before* a breach, kills runaway loo
 Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 
 - PRD: `docs/PRD.md` | Architecture: `docs/ARCHITECTURE.md` | Roadmap: `docs/ROADMAP.md`
-- Architect Notebook (Notion): https://www.notion.so/370ccc9d6d8081edb0fbc41c7d8a5a83
+- Architect Notebook: Notion (search "FuseGuard Architect Notebook")
 
 ## Current State (last updated: 2026-05-31)
 
@@ -23,8 +23,7 @@ Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 | 4 — Harden | ⬜ Next | Security pass, latency NFR, DO cold-start |
 | 5 — Launch | ⬜ | CF Pages deploy, landing page, README quickstart |
 
-**Active branch:** `feat/phase3-billing` → PR #14 open
-**Working dir:** `/home/kartik/Kartik/Claude-projects/fuseguard-dashboard`
+**Next:** Phase 4 — Harden/Security (see Roadmap)
 
 ## Infrastructure
 
@@ -62,7 +61,7 @@ supabase/
   Plaintext never stored, never logged. `hexToBase64()` handles Supabase bytea `\xHEX` format.
 - **Webhook:** `POST /webhook/lemon-squeezy` — HMAC-SHA256 verify, org_id DB-validated,
   event allowlist (4 events only), idempotent upsert on `org_id`.
-- **Free tier:** 1 key max enforced by DB trigger `check_api_key_limit()` (TOCTOU-safe).
+- **Free tier:** 1 key max enforced by DB trigger `check_api_key_limit()` (reduces race window vs app-only check; concurrent inserts in same transaction can still bypass — acceptable for MVP).
 - **RLS:** All tables org-scoped. `anthropic_key_ciphertext/iv` column-revoked from `authenticated`.
 
 ## Golden Rules (NON-NEGOTIABLE)

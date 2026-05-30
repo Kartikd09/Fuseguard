@@ -301,17 +301,18 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   // Map LS status to our enum. Only explicit cancellation events reach here (gated above).
   const statusMap: Record<string, string> = {
     active: "active",
+    on_trial: "active",   // LS test mode + free trial subscriptions
     past_due: "past_due",
     cancelled: "cancelled",
     expired: "cancelled",
     unpaid: "past_due",
+    paused: "past_due",
   };
   const status = statusMap[attrs.status ?? ""] ?? "cancelled";
 
-  const plans = await sbGet<{ id: string }>(env, "plans", "name=eq.pro&select=id&limit=1").catch(() => []);
-  const proPlanId = plans[0]?.id;
-  const freePlans = await sbGet<{ id: string }>(env, "plans", "name=eq.free&select=id&limit=1").catch(() => []);
-  const freePlanId = freePlans[0]?.id;
+  const allPlans = await sbGet<{ id: string; name: string }>(env, "plans", "name=in.(pro,free)&select=id,name&limit=2").catch(() => []);
+  const proPlanId = allPlans.find((p) => p.name === "pro")?.id;
+  const freePlanId = allPlans.find((p) => p.name === "free")?.id;
 
   if (!proPlanId || !freePlanId) {
     console.error("[fuseguard:webhook] plans not found in DB");
