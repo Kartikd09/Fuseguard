@@ -79,7 +79,13 @@ export default function SpendChart({ data, height = 220 }: SpendChartProps) {
           tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => (v === 0 ? "0" : `$${v.toFixed(2)}`)}
+          tickFormatter={(v: number) => {
+            if (v === 0) return "$0";
+            if (v < 0.001) return `$${v.toFixed(5)}`;
+            if (v < 0.01) return `$${v.toFixed(4)}`;
+            if (v < 1) return `$${v.toFixed(3)}`;
+            return `$${v.toFixed(2)}`;
+          }}
         />
         <Tooltip content={<CustomTooltip />} />
         <Area
