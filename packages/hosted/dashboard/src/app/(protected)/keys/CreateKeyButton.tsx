@@ -5,6 +5,20 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import CopyButton from "@/components/ui/CopyButton";
+import { Plus, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 interface CreateKeyButtonProps {
   keyCount: number;
@@ -14,7 +28,7 @@ type ModalState = "closed" | "form" | "created";
 
 interface CreatedKey {
   label: string;
-  fuseGuardKey: string; // shown once, never stored client-side after dismiss
+  fuseGuardKey: string;
 }
 
 export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
@@ -26,7 +40,6 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
   const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const router = useRouter();
 
-  // Free-tier limit: 1 key
   const isAtFreeLimit = keyCount >= 1;
 
   function openModal() {
@@ -39,7 +52,7 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
   function closeModal() {
     setModalState("closed");
     setCreatedKey(null);
-    setAnthropicKey(""); // clear key from state immediately
+    setAnthropicKey("");
   }
 
   async function handleCreate(e: FormEvent<HTMLFormElement>) {
@@ -62,13 +75,8 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
         return;
       }
 
-      // Clear the Anthropic key from state immediately after successful submission
       setAnthropicKey("");
-
-      setCreatedKey({
-        label: label.trim(),
-        fuseGuardKey: json.fuseGuardKey ?? "",
-      });
+      setCreatedKey({ label: label.trim(), fuseGuardKey: json.fuseGuardKey ?? "" });
       setModalState("created");
     } catch {
       setError("Network error. Please try again.");
@@ -85,143 +93,143 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
 
   return (
     <>
-      <button
+      <Button
         type="button"
         onClick={openModal}
-        className="inline-flex items-center gap-2 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-semibold text-white transition-colors"
         title={
           isAtFreeLimit
             ? "Free tier allows 1 key. Upgrade to Pro for unlimited."
             : "Create a new API key"
         }
       >
-        + Create key
+        <Plus className="h-4 w-4" />
+        Create key
         {isAtFreeLimit && (
-          <span className="fg-badge-warning ml-1">Pro</span>
+          <Badge variant="warning" className="ml-1">Pro</Badge>
         )}
-      </button>
+      </Button>
 
-      {/* Modal backdrop */}
-      {modalState !== "closed" && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-key-title"
-        >
-          <div className="w-full max-w-md rounded-2xl bg-gray-900 border border-gray-800 p-6 space-y-6">
-            {modalState === "form" && (
-              <>
-                <h2 id="create-key-title" className="text-lg font-bold text-white">
-                  Create API key
-                </h2>
-                {isAtFreeLimit && (
-                  <div className="rounded-lg border border-yellow-800 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-400">
-                    Free tier allows 1 key.{" "}
-                    <a href="/billing" className="underline">Upgrade to Pro</a> for unlimited.
-                  </div>
+      {/* Create form dialog */}
+      <Dialog open={modalState === "form"} onOpenChange={(open) => !open && closeModal()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create API key</DialogTitle>
+            <DialogDescription>
+              Your Anthropic key is encrypted server-side and never returned.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isAtFreeLimit && (
+            <div className="rounded-lg border border-yellow-700/50 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-400 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                Free tier allows 1 key.{" "}
+                <a href="/billing" className="underline hover:text-yellow-300">Upgrade to Pro</a>{" "}
+                for unlimited.
+              </span>
+            </div>
+          )}
+
+          <form onSubmit={(e) => void handleCreate(e)} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="key-label">Label</Label>
+              <Input
+                id="key-label"
+                type="text"
+                required
+                maxLength={64}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="production"
+                disabled={isSubmitting}
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="anthropic-key">Your Anthropic API key</Label>
+              <Input
+                id="anthropic-key"
+                type="password"
+                required
+                value={anthropicKey}
+                onChange={(e) => setAnthropicKey(e.target.value)}
+                placeholder="sk-ant-…"
+                autoComplete="off"
+                className="h-10 font-mono"
+                disabled={isSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                Encrypted with AES-256-GCM. Never stored in plaintext or logged.
+              </p>
+            </div>
+
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="ghost" onClick={closeModal} disabled={isSubmitting}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || !label || !anthropicKey}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  "Create"
                 )}
-                <form onSubmit={(e) => void handleCreate(e)} className="space-y-4">
-                  <div>
-                    <label htmlFor="key-label" className="block text-sm font-medium text-gray-300 mb-1">
-                      Label
-                    </label>
-                    <input
-                      id="key-label"
-                      type="text"
-                      required
-                      maxLength={64}
-                      value={label}
-                      onChange={(e) => setLabel(e.target.value)}
-                      placeholder="production"
-                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="anthropic-key" className="block text-sm font-medium text-gray-300 mb-1">
-                      Your Anthropic API key
-                    </label>
-                    <input
-                      id="anthropic-key"
-                      type="password"
-                      required
-                      value={anthropicKey}
-                      onChange={(e) => setAnthropicKey(e.target.value)}
-                      placeholder="sk-ant-…"
-                      autoComplete="off"
-                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono"
-                      disabled={isSubmitting}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      Encrypted with AES-256-GCM. Never stored in plaintext, never logged, never returned.
-                    </p>
-                  </div>
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-                  {error && (
-                    <p role="alert" className="text-sm text-red-400">
-                      {error}
-                    </p>
-                  )}
+      {/* Created key reveal dialog */}
+      <Dialog open={modalState === "created"} onOpenChange={(open) => !open && handleDone()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex justify-center mb-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20">
+                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+              </div>
+            </div>
+            <DialogTitle className="text-center">Key created — copy it now!</DialogTitle>
+            <DialogDescription className="text-center text-yellow-400/90">
+              This is the <strong>only time</strong> you&apos;ll see your FuseGuard key. We store
+              only a hash.
+            </DialogDescription>
+          </DialogHeader>
 
-                  <div className="flex gap-3 justify-end pt-2">
-                    <button
-                      type="button"
-                      onClick={closeModal}
-                      disabled={isSubmitting}
-                      className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !label || !anthropicKey}
-                      className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold text-white transition-colors"
-                    >
-                      {isSubmitting ? "Creating…" : "Create"}
-                    </button>
-                  </div>
-                </form>
-              </>
-            )}
+          {createdKey && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Your FuseGuard key for &quot;{createdKey.label}&quot;
+              </p>
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-4 py-3">
+                <code className="font-mono text-sm text-emerald-400 flex-1 break-all select-all">
+                  {createdKey.fuseGuardKey}
+                </code>
+                <CopyButton value={createdKey.fuseGuardKey} iconOnly label="key" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use this as <code className="fg-code">x-api-key</code> /{" "}
+                <code className="fg-code">apiKey</code> in your SDK config.
+              </p>
+            </div>
+          )}
 
-            {modalState === "created" && createdKey && (
-              <>
-                <div className="text-center space-y-2">
-                  <span className="text-4xl" aria-hidden="true">🎉</span>
-                  <h2 id="create-key-title" className="text-lg font-bold text-white">
-                    Key created — copy it now!
-                  </h2>
-                  <p className="text-sm text-yellow-400">
-                    This is the <strong>only time</strong> you&apos;ll see your FuseGuard key.
-                    We store only a hash.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-400">Your FuseGuard key for &quot;{createdKey.label}&quot;</p>
-                  <div className="flex items-center gap-2 rounded-lg bg-gray-800 border border-gray-700 px-4 py-3">
-                    <code className="font-mono text-sm text-green-400 flex-1 break-all select-all">
-                      {createdKey.fuseGuardKey}
-                    </code>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Use this as <code className="fg-code">x-api-key</code> / <code className="fg-code">apiKey</code> in your SDK config.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleDone}
-                  className="w-full rounded-lg bg-gray-700 hover:bg-gray-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-                >
-                  I&apos;ve saved it — close
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+          <Button onClick={handleDone} variant="secondary" className="w-full">
+            I&apos;ve saved it — close
+          </Button>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

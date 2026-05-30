@@ -7,7 +7,10 @@ import { budgetUsedPercent, formatUsd, formatTokens } from "@/lib/data/spend";
 import EmptyState from "@/components/ui/EmptyState";
 import BudgetBar from "@/components/ui/BudgetBar";
 import CreateBudgetButton from "./CreateBudgetButton";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import type { Budget } from "@/types";
+import { Shield, AlertTriangle, Ban, Info } from "lucide-react";
 
 export const metadata: Metadata = { title: "Budgets — FuseGuard" };
 export const dynamic = "force-dynamic";
@@ -49,8 +52,8 @@ export default async function BudgetsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Budgets</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Budgets</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             Hard-kill ceilings. FuseGuard blocks calls <em>before</em> a breach.
           </p>
         </div>
@@ -58,12 +61,16 @@ export default async function BudgetsPage() {
       </div>
 
       {budgets.length === 0 ? (
-        <EmptyState
-          icon="🛡️"
-          title="No budgets set"
-          description="Without a budget, FuseGuard tracks spend but won't block anything. Add one to enable hard enforcement."
-          action={<CreateBudgetButton keys={keys} asText />}
-        />
+        <Card>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={<Shield className="h-6 w-6 text-muted-foreground" />}
+              title="No budgets set"
+              description="Without a budget, FuseGuard tracks spend but won't block anything. Add one to enable hard enforcement."
+              action={<CreateBudgetButton keys={keys} asText />}
+            />
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
           {budgets.map((budget) => {
@@ -72,61 +79,78 @@ export default async function BudgetsPage() {
             const used = budgetUsedPercent(budget, events);
 
             return (
-              <div key={budget.id} className="fg-card space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-white font-medium">{scopeLabel}</span>
-                      <span className="fg-badge-success text-xs">{budgetWindowLabel(budget)}</span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          budget.limit_type === "usd"
-                            ? "bg-blue-900/40 text-blue-400"
-                            : "bg-purple-900/40 text-purple-400"
+              <Card key={budget.id}>
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-foreground">{scopeLabel}</span>
+                        <Badge variant="secondary">{budgetWindowLabel(budget)}</Badge>
+                        <Badge variant={budget.limit_type === "usd" ? "info" : "default"}>
+                          {budget.limit_type === "usd" ? "$ USD" : "Tokens"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Limit:{" "}
+                        <span className="font-mono text-foreground font-medium">
+                          {limitLabel(budget)}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p
+                        className={`text-2xl font-bold tabular-nums ${
+                          used >= 100
+                            ? "text-destructive"
+                            : used >= 80
+                            ? "text-yellow-400"
+                            : "text-foreground"
                         }`}
                       >
-                        {budget.limit_type === "usd" ? "$ USD" : "tokens"}
-                      </span>
+                        {used}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">used (24h)</p>
                     </div>
-                    <p className="text-sm text-gray-400">
-                      Limit: <span className="text-white font-mono">{limitLabel(budget)}</span>
-                    </p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-2xl font-bold tabular-nums text-white">{used}%</p>
-                    <p className="text-xs text-gray-500">used (24h)</p>
-                  </div>
-                </div>
+                </CardHeader>
+                <CardContent className="pt-0 space-y-3">
+                  <BudgetBar
+                    percent={used}
+                    label={`${limitLabel(budget)} ceiling`}
+                  />
 
-                <BudgetBar
-                  percent={used}
-                  label={`${limitLabel(budget)} ceiling`}
-                />
-
-                {used >= 80 && used < 100 && (
-                  <p className="text-xs text-yellow-400">
-                    ⚠️ Approaching limit — next calls will be blocked when this hits 100%.
-                  </p>
-                )}
-                {used >= 100 && (
-                  <p className="text-xs text-red-400">
-                    🚫 Budget exceeded — new calls are being blocked.
-                  </p>
-                )}
-              </div>
+                  {used >= 80 && used < 100 && (
+                    <div className="flex items-start gap-2 text-xs text-yellow-400">
+                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      Approaching limit — next calls will be blocked when this hits 100%.
+                    </div>
+                  )}
+                  {used >= 100 && (
+                    <div className="flex items-start gap-2 text-xs text-destructive">
+                      <Ban className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      Budget exceeded — new calls are being blocked.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             );
           })}
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900/30 px-5 py-4 text-sm text-gray-400">
-        <p>
-          <strong className="text-gray-300">How it works:</strong> FuseGuard estimates worst-case
-          cost before each call (input tokens + max_tokens × output price). If that projection
-          breaches the ceiling, the call is blocked with HTTP 402 — <em>before</em> it reaches
-          Anthropic.
-        </p>
-      </div>
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3 text-sm text-muted-foreground">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <p>
+              <strong className="text-foreground">How it works:</strong> FuseGuard estimates
+              worst-case cost before each call (input tokens + max_tokens × output price). If that
+              projection breaches the ceiling, the call is blocked with HTTP 402 —{" "}
+              <em>before</em> it reaches Anthropic.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

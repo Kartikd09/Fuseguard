@@ -3,11 +3,15 @@
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchSubscription } from "@/lib/data/queries";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2, Shield, Zap, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Billing — FuseGuard" };
 export const dynamic = "force-dynamic";
 
-// Phase 3: replace with real Lemon Squeezy checkout URL from env
 const LEMON_SQUEEZY_CHECKOUT_URL =
   process.env["LEMON_SQUEEZY_CHECKOUT_URL"] ??
   "https://fuseguard.lemonsqueezy.com/checkout/buy/placeholder";
@@ -45,20 +49,22 @@ export default async function BillingPage() {
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-white">Billing</h1>
-        <p className="mt-1 text-sm text-gray-400">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Billing</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">
           FuseGuard is free for one key. Upgrade to Pro to unlock the full circuit-breaker.
         </p>
       </div>
 
       {/* Current plan status */}
       {isPro && (
-        <div className="rounded-xl border border-green-700 bg-green-900/20 px-5 py-4 flex items-center gap-3">
-          <span className="text-xl" aria-hidden="true">✅</span>
+        <div className="rounded-xl border border-emerald-700/50 bg-emerald-950/30 dark:bg-emerald-900/10 px-5 py-4 flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
+          </div>
           <div>
-            <p className="font-semibold text-green-300">You&apos;re on Pro</p>
+            <p className="font-semibold text-emerald-300">You&apos;re on Pro</p>
             {renewsAt && (
-              <p className="text-sm text-green-400/80">Renews {renewsAt}</p>
+              <p className="text-sm text-emerald-400/70">Renews {renewsAt}</p>
             )}
           </div>
         </div>
@@ -67,107 +73,129 @@ export default async function BillingPage() {
       {/* Pricing cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Free */}
-        <div
-          className={`fg-card space-y-4 ${!isPro ? "ring-2 ring-gray-600" : ""}`}
+        <Card
+          className={cn(!isPro && "ring-2 ring-border")}
           aria-label="Free plan"
         >
-          <div>
-            <p className="text-sm text-gray-400 uppercase tracking-wider font-medium">Free</p>
-            <p className="text-3xl font-bold text-white mt-1">$0</p>
-            <p className="text-sm text-gray-500">forever</p>
-          </div>
-
-          <ul className="space-y-2" role="list">
-            {FREE_FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-gray-300">
-                <span className="text-green-400 mt-0.5 shrink-0" aria-hidden="true">✓</span>
-                {f}
-              </li>
-            ))}
-          </ul>
-
-          {!isPro && (
-            <div className="rounded-lg bg-gray-800 px-4 py-2 text-center text-sm text-gray-400">
-              Current plan
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Free
+              </CardTitle>
+              {!isPro && <Badge variant="secondary">Current</Badge>}
             </div>
-          )}
-        </div>
+            <div className="pt-1">
+              <span className="text-3xl font-bold text-foreground">$0</span>
+              <span className="text-sm text-muted-foreground ml-1">/ month</span>
+            </div>
+            <CardDescription>forever</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul className="space-y-2" role="list">
+              {FREE_FEATURES.map((f) => (
+                <li key={f} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" aria-hidden="true" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
 
         {/* Pro */}
-        <div
-          className={`fg-card space-y-4 relative overflow-hidden ${isPro ? "ring-2 ring-brand-500" : "border-brand-500/40"}`}
+        <Card
+          className={cn(
+            "relative overflow-hidden",
+            isPro ? "ring-2 ring-primary" : "border-primary/30"
+          )}
           aria-label="Pro plan"
         >
-          {/* Popular badge */}
-          <div
-            className="absolute top-4 right-4 text-xs font-bold bg-brand-500 text-white px-2 py-1 rounded-full"
-            aria-label="Most popular plan"
-          >
-            Pro
+          <div className="absolute top-4 right-4">
+            <Badge variant="default" className="text-xs">
+              <Zap className="h-3 w-3 mr-1" />
+              Popular
+            </Badge>
           </div>
 
-          <div>
-            <p className="text-sm text-brand-500 uppercase tracking-wider font-medium">Pro</p>
-            <p className="text-3xl font-bold text-white mt-1">$19</p>
-            <p className="text-sm text-gray-500">per month</p>
-          </div>
-
-          <ul className="space-y-2" role="list">
-            {PRO_FEATURES.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-gray-300">
-                <span className="text-brand-500 mt-0.5 shrink-0" aria-hidden="true">✓</span>
-                {f}
-              </li>
-            ))}
-          </ul>
-
-          {isPro ? (
-            <div className="rounded-lg bg-brand-500/10 border border-brand-500/30 px-4 py-2 text-center text-sm text-brand-400">
-              Active subscription
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-primary">
+              Pro
+            </CardTitle>
+            <div className="pt-1">
+              <span className="text-3xl font-bold text-foreground">$19</span>
+              <span className="text-sm text-muted-foreground ml-1">/ month</span>
             </div>
-          ) : (
-            <a
-              href={LEMON_SQUEEZY_CHECKOUT_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full rounded-lg bg-brand-500 hover:bg-brand-600 text-center px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-            >
-              Upgrade to Pro →
-            </a>
-          )}
-        </div>
+            <CardDescription>billed monthly, cancel anytime</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-2" role="list">
+              {PRO_FEATURES.map((f) => (
+                <li key={f} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" aria-hidden="true" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+
+            {isPro ? (
+              <div className="rounded-lg bg-primary/10 border border-primary/20 px-4 py-2.5 text-center text-sm text-primary">
+                Active subscription
+              </div>
+            ) : (
+              <Button asChild className="w-full">
+                <a
+                  href={LEMON_SQUEEZY_CHECKOUT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Upgrade to Pro
+                </a>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Phase 3 note */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900/30 px-5 py-4 text-sm text-gray-400">
-        <p>
-          <strong className="text-gray-300">Note:</strong> Full Lemon Squeezy checkout integration
-          (subscription management, customer portal, webhook-driven plan updates) is in Phase 3.
-          The Pro button links to checkout — contact{" "}
-          <a href="mailto:support@fuseguard.app" className="underline hover:text-white">
-            support@fuseguard.app
-          </a>{" "}
-          if you need manual activation.
-        </p>
-      </div>
+      <Card>
+        <CardContent className="py-4">
+          <p className="text-sm text-muted-foreground">
+            <strong className="text-foreground">Note:</strong> Full Lemon Squeezy checkout
+            integration is in Phase 3. The Pro button links to checkout — contact{" "}
+            <a
+              href="mailto:support@fuseguard.app"
+              className="underline hover:text-foreground transition-colors"
+            >
+              support@fuseguard.app
+            </a>{" "}
+            if you need manual activation.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Loop detection upsell */}
       {!isPro && (
-        <div className="rounded-xl border border-yellow-800 bg-yellow-900/10 px-5 py-4 space-y-2">
-          <p className="font-semibold text-yellow-300">Loop detection is Pro-only</p>
-          <p className="text-sm text-yellow-400/80">
-            The $47k agent loop that ran for 11 days — FuseGuard Pro detects and kills loops before
-            they cost you a cent. 10+ near-identical requests in 60s → hard block.
-          </p>
-          <a
-            href={LEMON_SQUEEZY_CHECKOUT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-sm font-medium text-yellow-300 underline hover:text-yellow-200"
-          >
-            Unlock loop detection →
-          </a>
-        </div>
+        <Card className="border-yellow-700/50">
+          <CardContent className="py-5 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-yellow-500/20 shrink-0">
+                <Shield className="h-4 w-4 text-yellow-400" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold text-yellow-300">Loop detection is Pro-only</p>
+                <p className="text-sm text-muted-foreground">
+                  The $47k agent loop that ran for 11 days — FuseGuard Pro detects and kills loops
+                  before they cost you a cent. 10+ near-identical requests in 60s → hard block.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" asChild className="border-yellow-700/50 text-yellow-300 hover:text-yellow-200">
+              <a href={LEMON_SQUEEZY_CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+                Unlock loop detection →
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

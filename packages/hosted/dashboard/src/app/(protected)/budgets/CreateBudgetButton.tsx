@@ -5,6 +5,19 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { ApiKey, BudgetScope, LimitType, BudgetWindow } from "@/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Plus, Loader2, Shield } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface CreateBudgetButtonProps {
   keys: ApiKey[];
@@ -13,7 +26,7 @@ interface CreateBudgetButtonProps {
 
 interface BudgetFormData {
   scope: BudgetScope;
-  scope_ref: string; // "" = all
+  scope_ref: string;
   limit_type: LimitType;
   limit_value: string;
   window: BudgetWindow;
@@ -90,185 +103,177 @@ export default function CreateBudgetButton({ keys, asText }: CreateBudgetButtonP
     }
   }
 
-  const trigger = asText ? (
-    <button
-      type="button"
-      onClick={() => setIsOpen(true)}
-      className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors"
-    >
-      Create budget →
-    </button>
-  ) : (
-    <button
-      type="button"
-      onClick={() => setIsOpen(true)}
-      className="inline-flex items-center gap-2 rounded-lg bg-brand-500 hover:bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors"
-    >
-      + Add budget
-    </button>
-  );
+  const toggleButtonClass = (active: boolean) =>
+    cn(
+      "flex-1 py-2 rounded-lg text-sm font-medium border transition-colors",
+      active
+        ? "border-primary bg-primary/10 text-primary"
+        : "border-border text-muted-foreground hover:border-muted-foreground"
+    );
 
   return (
     <>
-      {trigger}
+      {asText ? (
+        <Button onClick={() => setIsOpen(true)}>
+          <Shield className="h-4 w-4" />
+          Create budget
+        </Button>
+      ) : (
+        <Button onClick={() => setIsOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Add budget
+        </Button>
+      )}
 
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-budget-title"
-        >
-          <div className="w-full max-w-md rounded-2xl bg-gray-900 border border-gray-800 p-6 space-y-5">
-            <h2 id="create-budget-title" className="text-lg font-bold text-white">
-              Create budget
-            </h2>
+      <Dialog open={isOpen} onOpenChange={(open) => !open && setIsOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create budget</DialogTitle>
+            <DialogDescription>
+              Set a hard-kill ceiling. FuseGuard blocks calls before a breach occurs.
+            </DialogDescription>
+          </DialogHeader>
 
-            <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-              {/* Scope */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Scope</label>
-                <div className="flex gap-3">
-                  {(["key", "session"] as BudgetScope[]).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => update("scope", s)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        form.scope === s
-                          ? "border-brand-500 bg-brand-500/10 text-brand-500"
-                          : "border-gray-700 text-gray-400 hover:border-gray-600"
-                      }`}
-                    >
-                      {s === "key" ? "API Key" : "Session"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Scope ref (key picker) */}
-              {form.scope === "key" && keys.length > 0 && (
-                <div>
-                  <label htmlFor="scope-ref" className="block text-sm font-medium text-gray-300 mb-1">
-                    Apply to (blank = all keys)
-                  </label>
-                  <select
-                    id="scope-ref"
-                    value={form.scope_ref}
-                    onChange={(e) => update("scope_ref", e.target.value)}
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none"
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+            {/* Scope */}
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <div className="flex gap-2">
+                {(["key", "session"] as BudgetScope[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => update("scope", s)}
+                    className={toggleButtonClass(form.scope === s)}
                   >
-                    <option value="">All keys</option>
-                    {keys.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.label} ({k.fuseguard_key_prefix}…)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Limit type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Limit type</label>
-                <div className="flex gap-3">
-                  {(["usd", "tokens"] as LimitType[]).map((lt) => (
-                    <button
-                      key={lt}
-                      type="button"
-                      onClick={() => update("limit_type", lt)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        form.limit_type === lt
-                          ? "border-brand-500 bg-brand-500/10 text-brand-500"
-                          : "border-gray-700 text-gray-400 hover:border-gray-600"
-                      }`}
-                    >
-                      {lt === "usd" ? "$ USD" : "Tokens"}
-                    </button>
-                  ))}
-                </div>
+                    {s === "key" ? "API Key" : "Session"}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              {/* Limit value */}
-              <div>
-                <label htmlFor="limit-value" className="block text-sm font-medium text-gray-300 mb-1">
-                  {form.limit_type === "usd" ? "Limit ($)" : "Limit (tokens)"}
-                </label>
-                <input
-                  id="limit-value"
-                  type="number"
-                  min="0.01"
-                  step={form.limit_type === "usd" ? "0.01" : "1000"}
-                  required
-                  value={form.limit_value}
-                  onChange={(e) => update("limit_value", e.target.value)}
-                  placeholder={form.limit_type === "usd" ? "20.00" : "1000000"}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  disabled={isSubmitting}
-                />
-              </div>
-
-              {/* Window */}
-              <div>
-                <label htmlFor="budget-window" className="block text-sm font-medium text-gray-300 mb-1">
-                  Reset window
-                </label>
+            {/* Scope ref (key picker) */}
+            {form.scope === "key" && keys.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="scope-ref">Apply to (blank = all keys)</Label>
                 <select
-                  id="budget-window"
-                  value={form.window}
-                  onChange={(e) => update("window", e.target.value as BudgetWindow)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none"
+                  id="scope-ref"
+                  value={form.scope_ref}
+                  onChange={(e) => update("scope_ref", e.target.value)}
+                  className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  {WINDOW_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
+                  <option value="">All keys</option>
+                  {keys.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.label} ({k.fuseguard_key_prefix}…)
                     </option>
                   ))}
                 </select>
-
-                {form.window === "rolling" && (
-                  <div className="mt-2">
-                    <label htmlFor="window-hours" className="block text-xs text-gray-400 mb-1">
-                      Window size (hours)
-                    </label>
-                    <input
-                      id="window-hours"
-                      type="number"
-                      min="1"
-                      max="720"
-                      value={form.window_hours}
-                      onChange={(e) => update("window_hours", e.target.value)}
-                      className="w-24 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white focus:border-brand-500 focus:outline-none"
-                    />
-                  </div>
-                )}
               </div>
+            )}
 
-              {error && (
-                <p role="alert" className="text-sm text-red-400">{error}</p>
+            {/* Limit type */}
+            <div className="space-y-1.5">
+              <Label>Limit type</Label>
+              <div className="flex gap-2">
+                {(["usd", "tokens"] as LimitType[]).map((lt) => (
+                  <button
+                    key={lt}
+                    type="button"
+                    onClick={() => update("limit_type", lt)}
+                    className={toggleButtonClass(form.limit_type === lt)}
+                  >
+                    {lt === "usd" ? "$ USD" : "Tokens"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Limit value */}
+            <div className="space-y-1.5">
+              <Label htmlFor="limit-value">
+                {form.limit_type === "usd" ? "Limit ($)" : "Limit (tokens)"}
+              </Label>
+              <Input
+                id="limit-value"
+                type="number"
+                min="0.01"
+                step={form.limit_type === "usd" ? "0.01" : "1000"}
+                required
+                value={form.limit_value}
+                onChange={(e) => update("limit_value", e.target.value)}
+                placeholder={form.limit_type === "usd" ? "20.00" : "1000000"}
+                disabled={isSubmitting}
+                className="h-10"
+              />
+            </div>
+
+            {/* Window */}
+            <div className="space-y-1.5">
+              <Label htmlFor="budget-window">Reset window</Label>
+              <select
+                id="budget-window"
+                value={form.window}
+                onChange={(e) => update("window", e.target.value as BudgetWindow)}
+                className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {WINDOW_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+
+              {form.window === "rolling" && (
+                <div className="space-y-1">
+                  <Label htmlFor="window-hours" className="text-xs text-muted-foreground">
+                    Window size (hours)
+                  </Label>
+                  <Input
+                    id="window-hours"
+                    type="number"
+                    min="1"
+                    max="720"
+                    value={form.window_hours}
+                    onChange={(e) => update("window_hours", e.target.value)}
+                    className="w-24 h-9"
+                  />
+                </div>
               )}
+            </div>
 
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !form.limit_value}
-                  className="px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold text-white transition-colors"
-                >
-                  {isSubmitting ? "Saving…" : "Create budget"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsOpen(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || !form.limit_value}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  "Create budget"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

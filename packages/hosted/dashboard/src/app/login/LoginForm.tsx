@@ -4,6 +4,10 @@
 
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Mail, Loader2, CheckCircle } from "lucide-react";
 
 type FormState = "idle" | "loading" | "sent" | "error";
 
@@ -22,7 +26,6 @@ export default function LoginForm() {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        // Redirect to auth callback which exchanges the token and then sends to /dashboard
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
@@ -40,16 +43,20 @@ export default function LoginForm() {
     return (
       <div
         role="status"
-        className="rounded-xl border border-green-800 bg-green-900/20 p-6 text-center space-y-2"
+        className="rounded-lg border border-emerald-700/50 bg-emerald-950/30 dark:bg-emerald-900/10 p-5 text-center space-y-3"
       >
-        <p className="text-green-400 font-medium">Check your email</p>
-        <p className="text-sm text-gray-400">
-          We sent a magic link to{" "}
-          <span className="text-white font-mono">{email}</span>. Click it to
-          sign in.
-        </p>
+        <div className="flex justify-center">
+          <CheckCircle className="h-8 w-8 text-emerald-400" />
+        </div>
+        <div>
+          <p className="font-medium text-emerald-300">Check your email</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            We sent a magic link to{" "}
+            <span className="font-mono text-foreground">{email}</span>
+          </p>
+        </div>
         <button
-          className="mt-4 text-xs text-gray-500 underline hover:text-gray-300"
+          className="text-xs text-muted-foreground underline hover:text-foreground transition-colors"
           onClick={() => {
             setState("idle");
             setEmail("");
@@ -63,14 +70,9 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div>
-        <label
-          htmlFor="email"
-          className="block text-sm font-medium text-gray-300 mb-1.5"
-        >
-          Email address
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="email">Email address</Label>
+        <Input
           id="email"
           type="email"
           autoComplete="email"
@@ -78,25 +80,35 @@ export default function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           disabled={state === "loading"}
           aria-describedby={state === "error" ? "login-error" : undefined}
+          className="h-10"
         />
       </div>
 
       {state === "error" && (
-        <p id="login-error" role="alert" className="text-sm text-red-400">
+        <p id="login-error" role="alert" className="text-sm text-destructive">
           {errorMsg || "Something went wrong. Please try again."}
         </p>
       )}
 
-      <button
+      <Button
         type="submit"
         disabled={state === "loading" || !email}
-        className="w-full rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+        className="w-full h-10"
       >
-        {state === "loading" ? "Sending…" : "Send magic link"}
-      </button>
+        {state === "loading" ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Sending…
+          </>
+        ) : (
+          <>
+            <Mail className="h-4 w-4" />
+            Send magic link
+          </>
+        )}
+      </Button>
     </form>
   );
 }

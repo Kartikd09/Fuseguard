@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -25,13 +26,20 @@ export default function DashboardPoller() {
     <button
       type="button"
       onClick={() => setIsLive((v) => !v)}
-      className="flex items-center gap-2 rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
+      className={cn(
+        "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isLive
+          ? "border-emerald-700/50 bg-emerald-950/30 text-emerald-400 hover:bg-emerald-950/50"
+          : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground"
+      )}
       aria-label={isLive ? "Live updates on — click to pause" : "Live updates paused — click to resume"}
     >
       <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          isLive ? "bg-green-400 animate-pulse" : "bg-gray-600"
-        }`}
+        className={cn(
+          "w-1.5 h-1.5 rounded-full",
+          isLive ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"
+        )}
         aria-hidden="true"
       />
       {isLive ? "Live" : "Paused"}
