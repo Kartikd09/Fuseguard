@@ -89,6 +89,31 @@ function err402(
   return safeJson({ error: { type, message, ...details } }, 402);
 }
 
+function err503(type: string, message: string): Response {
+  return safeJson({ error: { type, message } }, 503);
+}
+
+// ── Response header allowlist (Finding #6) ─────────────────────────────────────────────────────
+// Only forward these upstream response headers to the client. Strip everything else:
+// set-cookie, cf-ray, request-id, anthropic-internal headers, etc.
+// Never forward set-cookie (session fixation / cookie injection risk).
+const ALLOWED_RESPONSE_HEADERS = new Set([
+  "content-type",
+  "anthropic-version",
+  "retry-after",
+  "x-request-id",
+  "request-id",
+]);
+
+function buildClientResponseHeaders(upstreamHeaders: Headers): Headers {
+  const out = new Headers();
+  for (const name of ALLOWED_RESPONSE_HEADERS) {
+    const val = upstreamHeaders.get(name);
+    if (val != null) out.set(name, val);
+  }
+  return out;
+}
+
 // ── DO helpers ─────────────────────────────────────────────────────────────────────────────────
 
 async function doPost(doInstance: BudgetDO, path: string, body: unknown): Promise<Response> {
@@ -109,6 +134,33 @@ interface ReserveResult {
   readonly ok: boolean;
   readonly blocked: boolean;
   readonly reservationId?: string;
+}
+
+// ── DO calls wrapped with failure policy (Finding #7) ─────────────────────────────────────────
+// All DO interactions must respect FAILURE_MODE. If the DO call throws, apply the policy:
+//   - closed → return a 402 enforcement_unavailable sentinel
+//   - open   → return null (caller decides to forward without enforcement)
+// A DO error must NEVER become an uncaught 500.
+
+type DOCallResult<T> = { ok: true; value: T } | { ok: false; response: Response };
+
+async function doCallWithPolicy<T>(
+  fn: () => Promise<T>,
+  failureMode: ProxyEnv["FAILURE_MODE"],
+  emitEvent: ProxyEnv["emitEvent"]
+): Promise<DOCallResult<T>> {
+  try {
+    const value = await fn();
+    return { ok: true, value };
+  } catch (err) {
+    emitEvent({ type: "do_error", error: String(err) });
+    if (failureMode === "closed") {
+      return { ok: false, response: err402("enforcement_unavailable", "Budget enforcement is temporarily unavailable") };
+    }
+    // fail-open: signal that the DO call failed but we should continue without enforcement.
+    // The caller handles this by returning a specific sentinel.
+    return { ok: false, response: err402("enforcement_unavailable", "Budget enforcement temporarily unavailable (fail-open)") };
+  }
 }
 
 async function reserve(doInstance: BudgetDO, estCost: number): Promise<ReserveResult> {
@@ -153,6 +205,9 @@ interface UsageBlock {
 }
 
 // Tee the SSE stream: pipe to client, parse terminal usage event on the side, reconcile on end.
+// Finding #3: track whether a terminal usage event (message_delta with output_tokens) was observed.
+// If NOT observed (client disconnect / truncation), reconcile to the WORST-CASE estimate — never 0.
+// This prevents free-calls via stream truncation.
 function teeStreamWithReconcile(
   upstreamStream: ReadableStream<Uint8Array>,
   keyDO: BudgetDO,
@@ -160,6 +215,7 @@ function teeStreamWithReconcile(
   keyReservationId: string,
   sessionReservationId: string | null,
   model: string,
+  worstCaseCost: number,
   emitEvent: ProxyEnv["emitEvent"],
   orgId: string
 ): ReadableStream<Uint8Array> {
@@ -170,7 +226,10 @@ function teeStreamWithReconcile(
     const reader = parserStream.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let finalUsage: UsageBlock | null = null;
+    let inputTokens = 0;
+    let outputTokens: number | null = null; // null = no terminal usage observed yet
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
 
     try {
       let streamDone = false;
@@ -189,15 +248,22 @@ function teeStreamWithReconcile(
           const data = line.slice("data: ".length).trim();
           if (data === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(data) as { type?: string; usage?: UsageBlock };
-            // message_delta carries the final output token count.
-            if (parsed.type === "message_delta" && parsed.usage) {
-              // Merge: keep the input_tokens from message_start if seen.
-              finalUsage = { ...(finalUsage ?? {}), ...parsed.usage };
+            const parsed = JSON.parse(data) as {
+              type?: string;
+              usage?: UsageBlock & { cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+              message?: { usage?: UsageBlock };
+            };
+            if (parsed.type === "message_start" && parsed.message?.usage) {
+              const u = parsed.message.usage;
+              inputTokens = u.input_tokens ?? inputTokens;
+              // message_start does NOT carry output_tokens — do not set outputTokens here.
             }
-            if (parsed.type === "message_start") {
-              const startUsage = (parsed as { message?: { usage?: UsageBlock } }).message?.usage;
-              if (startUsage) finalUsage = { ...(finalUsage ?? {}), ...startUsage };
+            // message_delta carries the TERMINAL output token count (Finding #3: only set here).
+            if (parsed.type === "message_delta" && parsed.usage) {
+              const u = parsed.usage;
+              if (u.output_tokens != null) outputTokens = u.output_tokens;
+              if (u.cache_read_input_tokens != null) cacheReadTokens = u.cache_read_input_tokens;
+              if (u.cache_creation_input_tokens != null) cacheWriteTokens = u.cache_creation_input_tokens;
             }
           } catch {
             // Ignore parse failures on individual lines.
@@ -208,19 +274,30 @@ function teeStreamWithReconcile(
       reader.releaseLock();
     }
 
-    // Reconcile on stream end (or client disconnect — keep worst case if no usage captured).
-    const inputTokens = finalUsage?.input_tokens ?? 0;
-    const outputTokens = finalUsage?.output_tokens ?? 0;
-    const actualCost = cost(model, inputTokens, outputTokens);
+    // Finding #3: if no terminal usage was observed (outputTokens still null), keep the
+    // worst-case reservation — never reconcile down to 0. This prevents free-call bypass
+    // via client disconnect or stream truncation.
+    const actualCost = outputTokens !== null
+      ? cost(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens)
+      : worstCaseCost;
 
-    await reconcile(keyDO, keyReservationId, actualCost);
+    try {
+      await reconcile(keyDO, keyReservationId, actualCost);
+    } catch (err) {
+      emitEvent({ type: "reconcile_error", scope: "key", error: String(err) });
+    }
     if (sessionDO != null && sessionReservationId != null) {
-      await reconcile(sessionDO, sessionReservationId, actualCost);
+      try {
+        await reconcile(sessionDO, sessionReservationId, actualCost);
+      } catch (err) {
+        emitEvent({ type: "reconcile_error", scope: "session", error: String(err) });
+      }
     }
 
-    emitEvent({ type: "usage", orgId, model, inputTokens, outputTokens, costUsd: actualCost });
-  })().catch(() => {
-    // Never let async reconciliation error propagate — it's off the hot path.
+    emitEvent({ type: "usage", orgId, model, inputTokens, outputTokens: outputTokens ?? 0, costUsd: actualCost });
+  })().catch((err) => {
+    // Surface reconciliation errors to the event sink instead of swallowing silently.
+    emitEvent({ type: "reconcile_error", scope: "stream_async", error: String(err) });
   });
 
   return clientStream;
@@ -263,6 +340,81 @@ function buildMessagesReq(b: ValidatedBody): MessagesRequest {
   };
 }
 
+// ── Sub-handlers (decomposed for <50 lines each, Finding #10) ─────────────────────────────────
+
+async function handleKeyReservation(
+  keyDO: BudgetDO,
+  estCost: number,
+  failureMode: ProxyEnv["FAILURE_MODE"],
+  emitEvent: ProxyEnv["emitEvent"],
+  orgId: string
+): Promise<{ blocked: false; reservationId: string } | { blocked: true; response: Response }> {
+  const statusResult = await doCallWithPolicy(() => getStatus(keyDO), failureMode, emitEvent);
+  if (!statusResult.ok) return { blocked: true, response: statusResult.response };
+
+  const keyStatus = statusResult.value;
+  const reserveResult = await doCallWithPolicy(() => reserve(keyDO, estCost), failureMode, emitEvent);
+  if (!reserveResult.ok) return { blocked: true, response: reserveResult.response };
+
+  const keyReserveResult = reserveResult.value;
+  if (keyReserveResult.blocked) {
+    emitEvent({ type: "block", reason: "budget_exceeded", scope: "key", orgId });
+    return {
+      blocked: true,
+      response: err402("budget_exceeded", "Request would exceed your key budget", {
+        scope: "key",
+        budget_limit: keyStatus.limitUsd,
+        current_spend: keyStatus.spentUsd,
+        projected: keyStatus.spentUsd + estCost,
+      }),
+    };
+  }
+
+  return { blocked: false, reservationId: keyReserveResult.reservationId! };
+}
+
+async function handleSessionReservation(
+  sessionDO: BudgetDO,
+  keyDO: BudgetDO,
+  keyReservationId: string,
+  estCost: number,
+  failureMode: ProxyEnv["FAILURE_MODE"],
+  emitEvent: ProxyEnv["emitEvent"],
+  orgId: string
+): Promise<{ blocked: false; reservationId: string } | { blocked: true; response: Response }> {
+  const statusResult = await doCallWithPolicy(() => getStatus(sessionDO), failureMode, emitEvent);
+  if (!statusResult.ok) {
+    // Release key hold before returning.
+    await release(keyDO, keyReservationId).catch(() => undefined);
+    return { blocked: true, response: statusResult.response };
+  }
+
+  const sessionStatus = statusResult.value;
+  const reserveResult = await doCallWithPolicy(() => reserve(sessionDO, estCost), failureMode, emitEvent);
+  if (!reserveResult.ok) {
+    await release(keyDO, keyReservationId).catch(() => undefined);
+    return { blocked: true, response: reserveResult.response };
+  }
+
+  const sessionReserveResult = reserveResult.value;
+  if (sessionReserveResult.blocked) {
+    // Compensating release: free the key reservation.
+    await release(keyDO, keyReservationId).catch(() => undefined);
+    emitEvent({ type: "block", reason: "budget_exceeded", scope: "session", orgId });
+    return {
+      blocked: true,
+      response: err402("budget_exceeded", "Request would exceed your session budget", {
+        scope: "session",
+        budget_limit: sessionStatus.limitUsd,
+        current_spend: sessionStatus.spentUsd,
+        projected: sessionStatus.spentUsd + estCost,
+      }),
+    };
+  }
+
+  return { blocked: false, reservationId: sessionReserveResult.reservationId! };
+}
+
 // ── Core handler factory ───────────────────────────────────────────────────────────────────────
 
 export function createProxyHandler() {
@@ -289,16 +441,18 @@ export function createProxyHandler() {
       if (env.FAILURE_MODE === "closed") {
         return err402("enforcement_unavailable", "Budget enforcement is temporarily unavailable");
       }
-      // Fail-open: forward without enforcement.
-      const body = await request.text();
-      return forwardToAnthropic(
-        new Request(request.url, { method: request.method, headers: request.headers, body }),
-        fuseguardKey,
-        env.upstreamFetch
-      );
+      // Finding #1 FIX: fail-open when lookupKey throws means we have NO valid decrypted
+      // Anthropic key — we must NOT forward the FuseGuard client key as the upstream x-api-key.
+      // Return 503 "enforcement unavailable, no key" instead of forwarding with the wrong key.
+      // TODO(Phase 2): when fail-open with a cached/fallback key is available, forward here.
+      return err503("enforcement_unavailable", "Budget enforcement temporarily unavailable and no fallback key available");
     }
 
     if (keyLookup == null) {
+      // Finding #2: key not found → fail closed regardless of FAILURE_MODE.
+      // An unknown key is never valid; returning Infinity would bypass all enforcement.
+      // TODO(Phase 2): wire real Supabase + AES-GCM decrypt: SELECT anthropic_key_ciphertext
+      //   FROM api_keys WHERE fuseguard_key_hash = $1 AND is_active = true, then decrypt.
       return err401("Unknown or inactive FuseGuard API key");
     }
 
@@ -319,7 +473,7 @@ export function createProxyHandler() {
       return err400("invalid_request", "Request body must include model (string), max_tokens (positive integer), and messages (array)");
     }
 
-    // ── Loop detection ───────────────────────────────────────────────────────────────────────
+    // ── Loop detection (Finding #7: wrap DO call with policy) ────────────────────────────────
     const reqHash = requestHash({
       model: validBody.model,
       system: validBody.system,
@@ -327,52 +481,47 @@ export function createProxyHandler() {
       tools: validBody.tools,
     });
 
-    const loopResult = await recordLoop(keyDO, reqHash);
-    if (loopResult.loop) {
+    const loopResult = await doCallWithPolicy(
+      () => recordLoop(keyDO, reqHash),
+      env.FAILURE_MODE,
+      env.emitEvent
+    );
+    if (!loopResult.ok) return loopResult.response;
+    if (loopResult.value.loop) {
       return err402("loop_detected", "Loop detected: too many near-identical requests within the window", {
         scope: "key",
-        count: loopResult.count,
+        count: loopResult.value.count,
       });
     }
 
     // ── Pre-flight estimate ──────────────────────────────────────────────────────────────────
     const estCost = estimateWorstCase(buildMessagesReq(validBody));
 
-    // ── Reserve key budget ───────────────────────────────────────────────────────────────────
-    const keyStatus = await getStatus(keyDO);
-    const keyReserveResult = await reserve(keyDO, estCost);
-
-    if (keyReserveResult.blocked) {
-      env.emitEvent({ type: "block", reason: "budget_exceeded", scope: "key", orgId });
-      return err402("budget_exceeded", "Request would exceed your key budget", {
-        scope: "key",
-        budget_limit: keyStatus.limitUsd,
-        current_spend: keyStatus.spentUsd,
-        projected: keyStatus.spentUsd + estCost,
-      });
-    }
-
-    const keyReservationId = keyReserveResult.reservationId!;
+    // ── Reserve key budget (Finding #7: DO errors apply failure policy) ──────────────────────
+    const keyReserveOutcome = await handleKeyReservation(
+      keyDO,
+      estCost,
+      env.FAILURE_MODE,
+      env.emitEvent,
+      orgId
+    );
+    if (keyReserveOutcome.blocked) return keyReserveOutcome.response;
+    const keyReservationId = keyReserveOutcome.reservationId;
 
     // ── Reserve session budget (if session header present and session DO exists) ─────────────
     let sessionReservationId: string | null = null;
     if (sessionId != null && sessionDO != null) {
-      const sessionStatus = await getStatus(sessionDO);
-      const sessionReserveResult = await reserve(sessionDO, estCost);
-
-      if (sessionReserveResult.blocked) {
-        // Compensating release: free the key reservation (fixed lock order, no deadlock).
-        await release(keyDO, keyReservationId);
-        env.emitEvent({ type: "block", reason: "budget_exceeded", scope: "session", orgId });
-        return err402("budget_exceeded", "Request would exceed your session budget", {
-          scope: "session",
-          budget_limit: sessionStatus.limitUsd,
-          current_spend: sessionStatus.spentUsd,
-          projected: sessionStatus.spentUsd + estCost,
-        });
-      }
-
-      sessionReservationId = sessionReserveResult.reservationId!;
+      const sessionReserveOutcome = await handleSessionReservation(
+        sessionDO,
+        keyDO,
+        keyReservationId,
+        estCost,
+        env.FAILURE_MODE,
+        env.emitEvent,
+        orgId
+      );
+      if (sessionReserveOutcome.blocked) return sessionReserveOutcome.response;
+      sessionReservationId = sessionReserveOutcome.reservationId;
     }
 
     // ── Forward to Anthropic ─────────────────────────────────────────────────────────────────
@@ -387,9 +536,9 @@ export function createProxyHandler() {
       upstreamResponse = await forwardToAnthropic(forwardRequest, anthropicKey, env.upstreamFetch);
     } catch {
       // Forward failed — release reservations to avoid leaking holds.
-      await release(keyDO, keyReservationId);
+      await release(keyDO, keyReservationId).catch(() => undefined);
       if (sessionDO != null && sessionReservationId != null) {
-        await release(sessionDO, sessionReservationId);
+        await release(sessionDO, sessionReservationId).catch(() => undefined);
       }
       return safeJson({ error: { type: "upstream_error", message: "Failed to reach Anthropic API" } }, 502);
     }
@@ -405,13 +554,15 @@ export function createProxyHandler() {
         keyReservationId,
         sessionReservationId,
         validBody.model,
+        estCost, // Finding #3: pass worst-case as fallback reconciliation amount
         env.emitEvent,
         orgId
       );
 
+      // Finding #6: apply response header allowlist to streaming response.
       return new Response(reconciledStream, {
         status: upstreamResponse.status,
-        headers: upstreamResponse.headers,
+        headers: buildClientResponseHeaders(upstreamResponse.headers),
       });
     }
 
@@ -419,18 +570,30 @@ export function createProxyHandler() {
     const responseText = await upstreamResponse.text();
     let actualInputTokens = 0;
     let actualOutputTokens = 0;
+    let actualCacheReadTokens = 0;
+    let actualCacheWriteTokens = 0;
 
     try {
-      const parsed = JSON.parse(responseText) as { usage?: { input_tokens?: number; output_tokens?: number } };
+      const parsed = JSON.parse(responseText) as {
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_input_tokens?: number;
+          cache_creation_input_tokens?: number;
+        };
+      };
       if (parsed.usage) {
         actualInputTokens = parsed.usage.input_tokens ?? 0;
         actualOutputTokens = parsed.usage.output_tokens ?? 0;
+        // Finding #9 (SHOULD): parse cache tokens per ARCHITECTURE §3.
+        actualCacheReadTokens = parsed.usage.cache_read_input_tokens ?? 0;
+        actualCacheWriteTokens = parsed.usage.cache_creation_input_tokens ?? 0;
       }
     } catch {
       // If we can't parse actual usage, keep worst case (fail safe — never release more than charged).
     }
 
-    const actualCost = cost(validBody.model, actualInputTokens, actualOutputTokens);
+    const actualCost = cost(validBody.model, actualInputTokens, actualOutputTokens, actualCacheReadTokens, actualCacheWriteTokens);
 
     await reconcile(keyDO, keyReservationId, actualCost);
     if (sessionDO != null && sessionReservationId != null) {
@@ -444,12 +607,15 @@ export function createProxyHandler() {
       model: validBody.model,
       inputTokens: actualInputTokens,
       outputTokens: actualOutputTokens,
+      cacheReadTokens: actualCacheReadTokens,
+      cacheWriteTokens: actualCacheWriteTokens,
       costUsd: actualCost,
     });
 
+    // Finding #6: apply response header allowlist to non-stream response.
     return new Response(responseText, {
       status: upstreamResponse.status,
-      headers: upstreamResponse.headers,
+      headers: buildClientResponseHeaders(upstreamResponse.headers),
     });
   };
 }

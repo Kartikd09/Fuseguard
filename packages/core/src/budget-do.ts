@@ -10,7 +10,7 @@
 //   GET  /status                                   → { limitUsd, spentUsd, remainingUsd, reservedUsd }
 //   POST /loop/record { reqHash }                  → { loop, count }
 
-import { LoopDetector, requestHash as _requestHash } from "./loop/index.js";
+import { requestHash as _requestHash } from "./loop/index.js";
 
 export type FailureMode = "open" | "closed";
 
@@ -29,6 +29,17 @@ interface BudgetState {
   spentUsd: number;
   reservations: Record<string, Reservation>;
 }
+
+// Finding #5: persist the LoopDetector ring buffer alongside the budget state.
+// Without persistence, the ring buffer resets on every DO eviction/restart — a client
+// could accumulate 9 requests, wait for eviction, then repeat indefinitely without
+// triggering loop detection. Persisting to DO storage closes this bypass.
+interface LoopEntry {
+  hash: string;
+  ts: number;
+}
+
+const LOOP_STORAGE_KEY = "loop_entries";
 
 function makeReservationId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -51,7 +62,10 @@ export class BudgetDO {
   // In-memory state (survives within a single DO lifetime; also persisted via transactional
   // storage so it survives eviction/restart — ARCHITECTURE §4d).
   private state_: BudgetState | null = null;
-  private loopDetector: LoopDetector | null = null;
+  // Finding #5: loop ring buffer persisted to DO storage as a write-through cache.
+  // Every record() call updates this cache AND writes to storage so the ring buffer
+  // survives DO eviction/restart (no in-memory-only bypass).
+  private loopEntries_: LoopEntry[] | null = null;
   // Serial queue: ensures concurrent fetch() calls are processed one at a time,
   // mirroring the CF DO single-thread guarantee in tests (ARCHITECTURE §4c).
   private queue: Promise<unknown> = Promise.resolve();
@@ -91,11 +105,12 @@ export class BudgetDO {
     await this.state.storage.put("budget", s);
   }
 
-  private getLoopDetector(): LoopDetector {
-    if (this.loopDetector == null) {
-      this.loopDetector = new LoopDetector({ now: () => Date.now() / 1000 });
-    }
-    return this.loopDetector;
+  // Finding #5: lazy-load the persisted loop entries from storage.
+  private async getLoopEntries(): Promise<LoopEntry[]> {
+    if (this.loopEntries_ != null) return this.loopEntries_;
+    const stored = await this.state.storage.get<LoopEntry[]>(LOOP_STORAGE_KEY);
+    this.loopEntries_ = stored ?? [];
+    return this.loopEntries_;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -211,11 +226,36 @@ export class BudgetDO {
     return jsonResponse({ ok: true });
   }
 
+  // Finding #5: loop detection with persisted ring buffer.
+  // We manage the ring buffer directly (instead of delegating to LoopDetector's internal array)
+  // so we can persist it to DO storage. The pruning and counting logic mirrors LoopDetector exactly.
   private async handleLoopRecord(request: Request): Promise<Response> {
     const { reqHash } = (await request.json()) as { reqHash: string };
-    const detector = this.getLoopDetector();
-    const result = detector.record(reqHash);
-    return jsonResponse({ loop: result.loop, count: result.count });
+    const now = Date.now() / 1000;
+    const windowSeconds = 60; // DEFAULT_WINDOW_SECONDS from LoopDetector
+    const threshold = 10;     // DEFAULT_THRESHOLD from LoopDetector
+
+    const entries = await this.getLoopEntries();
+
+    // Append the new entry.
+    entries.push({ hash: reqHash, ts: now });
+
+    // Prune entries older than the window (same logic as LoopDetector.prune).
+    const cutoff = now - windowSeconds;
+    let firstLive = 0;
+    while (firstLive < entries.length && entries[firstLive]!.ts < cutoff) {
+      firstLive++;
+    }
+    const pruned = firstLive > 0 ? entries.slice(firstLive) : entries;
+
+    // Count entries matching this hash.
+    const count = pruned.reduce((total, e) => (e.hash === reqHash ? total + 1 : total), 0);
+
+    // Persist the pruned entries — write-through so they survive eviction.
+    this.loopEntries_ = pruned;
+    await this.state.storage.put(LOOP_STORAGE_KEY, pruned);
+
+    return jsonResponse({ loop: count >= threshold, count });
   }
 }
 
