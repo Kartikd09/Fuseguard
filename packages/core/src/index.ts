@@ -49,15 +49,16 @@ async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
   });
 }
 
-// Supabase REST returns bytea as \xHEX — convert to base64 for Web Crypto.
+// Supabase REST returns bytea columns as \xHEX where the bytes are the UTF-8 encoding
+// of the original stored string (base64). Decode hex → UTF-8 string to get the base64 back.
 function hexToBase64(s: string): string {
-  if (!s.startsWith("\\x")) return s; // already base64
+  if (!s.startsWith("\\x")) return s; // already a plain string / base64
   const hex = s.slice(2);
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
+  let str = "";
+  for (let i = 0; i < hex.length; i += 2) {
+    str += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+  }
+  return str; // this IS the base64 string that was originally stored
 }
 
 const proxyHandler = createProxyHandler();

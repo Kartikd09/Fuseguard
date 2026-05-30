@@ -7,6 +7,7 @@ import { budgetUsedPercent, formatUsd, formatTokens } from "@/lib/data/spend";
 import EmptyState from "@/components/ui/EmptyState";
 import BudgetBar from "@/components/ui/BudgetBar";
 import CreateBudgetButton from "./CreateBudgetButton";
+import BudgetActions from "./BudgetActions";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Budget } from "@/types";
@@ -38,7 +39,8 @@ function limitLabel(budget: Budget): string {
   return `${formatTokens(budget.limit_value)} tokens`;
 }
 
-export default async function BudgetsPage() {
+export default async function BudgetsPage({ searchParams }: { searchParams: Promise<{ keyId?: string }> }) {
+  const { keyId } = await searchParams;
   const supabase = await createServerSupabaseClient();
   const [budgets, keys, events] = await Promise.all([
     fetchBudgets(supabase),
@@ -57,7 +59,7 @@ export default async function BudgetsPage() {
             Hard-kill ceilings. FuseGuard blocks calls <em>before</em> a breach.
           </p>
         </div>
-        <CreateBudgetButton keys={keys} />
+        <CreateBudgetButton keys={keys} defaultKeyId={keyId} />
       </div>
 
       {budgets.length === 0 ? (
@@ -96,6 +98,9 @@ export default async function BudgetsPage() {
                           {limitLabel(budget)}
                         </span>
                       </p>
+                    </div>
+                    <div className="flex items-start gap-2 shrink-0">
+                      <BudgetActions budget={budget} keys={keys} />
                     </div>
                     <div className="text-right shrink-0">
                       <p
