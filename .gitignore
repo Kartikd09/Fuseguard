@@ -40,3 +40,4 @@ wrangler.toml.bak
 
 # TypeScript incremental build artifacts
 *.tsbuildinfo
+supabase/.temp/
