@@ -418,7 +418,10 @@ describe("Fail-closed / fail-open (Task 12)", () => {
     expect(upstreamFetch).not.toHaveBeenCalled();
   });
 
-  it("forwards when DO is unreachable and FAILURE_MODE=open", async () => {
+  // FINDING #1 FIX: fail-open must NOT forward the FuseGuard key as x-api-key upstream.
+  // When lookupKey throws (no decrypted Anthropic key available), fail-open must return
+  // 503 "enforcement unavailable, no key" — NEVER substitute the FuseGuard key as upstream auth.
+  it("fail-open: returns 503 (no upstream call) when lookupKey throws and no anthropic key is available", async () => {
     const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
     const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch, failureMode: "open" });
 
@@ -429,8 +432,258 @@ describe("Fail-closed / fail-open (Task 12)", () => {
     const handler = createProxyHandler();
     const response = await handler(makeRequest(BASE_MESSAGES_BODY), env);
 
+    // Must NOT forward — we have no valid decrypted key to use.
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { error: { type: string } };
+    expect(body.error.type).toBe("enforcement_unavailable");
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("fail-open: the FuseGuard client key (fg_test-key) must NEVER appear as x-api-key in any upstream call", async () => {
+    // Even if we somehow forwarded, the FG key must never be substituted upstream.
+    const capturedHeaders: Record<string, string>[] = [];
+    const spyFetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      const hdrs = (init?.headers ?? {}) as Record<string, string>;
+      capturedHeaders.push(hdrs);
+      return new Response(VALID_ANTHROPIC_RESPONSE, { status: 200, headers: { "content-type": "application/json" } });
+    });
+
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch: spyFetch, failureMode: "open" });
+    env.lookupKey = async () => { throw new Error("DO unreachable"); };
+
+    const handler = createProxyHandler();
+    await handler(makeRequest(BASE_MESSAGES_BODY), env);
+
+    // If upstream was called (which it must NOT be per fix), the FG key must not appear.
+    for (const hdrs of capturedHeaders) {
+      expect(hdrs["x-api-key"]).not.toBe("fg_test-key");
+      expect(hdrs["x-api-key"]).not.toMatch(/^fg_/);
+    }
+  });
+
+  // FINDING #7 FIX: FAILURE_MODE must apply to ALL DO interactions, not just lookupKey.
+  // If the DO reserve call throws after a successful lookupKey, apply fail-closed → 402.
+  it("fail-closed: DO reserve throws after successful lookupKey → 402 enforcement_unavailable (not 500)", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+
+    // Build a BudgetDO whose reserve always throws.
+    const throwingDO = {
+      fetch: async (req: Request): Promise<Response> => {
+        const url = new URL(req.url);
+        if (url.pathname === "/reserve") throw new Error("DO storage failure");
+        if (url.pathname === "/loop/record") {
+          return new Response(JSON.stringify({ loop: false, count: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (url.pathname === "/status") {
+          return new Response(JSON.stringify({ limitUsd: 10, spentUsd: 0, remainingUsd: 10, reservedUsd: 0 }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    } as unknown as import("../budget-do.js").BudgetDO;
+
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch, failureMode: "closed" });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 10,
+      keyDO: throwingDO,
+      sessionDO: null,
+    });
+
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+
+    expect(response.status).toBe(402);
+    const body = (await response.json()) as { error: { type: string } };
+    expect(body.error.type).toBe("enforcement_unavailable");
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  // FINDING #2 FIX: unconfigured lookupKey (returns null) → 402 "not configured", no upstream.
+  it("unconfigured key store (lookupKey returns null) → 401, no upstream call", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch, failureMode: "closed" });
+    env.lookupKey = async () => null; // no key found
+
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+
+    expect(response.status).toBe(401);
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ── Finding #6: Response header allowlist ─────────────────────────────────────────────────────
+describe("Response header allowlist (Finding #6)", () => {
+  it("strips set-cookie from upstream response before returning to client", async () => {
+    const upstreamFetch = vi.fn().mockImplementation(async () =>
+      new Response(VALID_ANTHROPIC_RESPONSE, {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": "session=evil; HttpOnly",
+          "cf-ray": "abc123",
+          "anthropic-version": "2023-06-01",
+        },
+      })
+    );
+
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch });
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+
     expect(response.status).toBe(200);
-    expect(upstreamFetch).toHaveBeenCalledOnce();
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("cf-ray")).toBeNull();
+    // Allowed headers pass through.
+    expect(response.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("strips set-cookie from streaming upstream response before returning to client", async () => {
+    const enc = new TextEncoder();
+    const sseBody = [
+      "data: " + JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 5 } } }) + "\n\n",
+      "data: " + JSON.stringify({ type: "message_delta", delta: {}, usage: { output_tokens: 3 } }) + "\n\n",
+      "data: " + JSON.stringify({ type: "message_stop" }) + "\n\n",
+    ].join("");
+
+    const upstreamFetch = vi.fn().mockImplementation(async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) { c.enqueue(enc.encode(sseBody)); c.close(); },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "text/event-stream",
+            "set-cookie": "sess=bad",
+            "anthropic-version": "2023-06-01",
+          },
+        }
+      )
+    );
+
+    const streamBody = JSON.stringify({ model: "claude-sonnet-4", max_tokens: 100, stream: true, messages: [{ role: "user", content: "hi" }] });
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch });
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(streamBody), env);
+
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+  });
+});
+
+// ── Finding #3: Stream disconnect keeps worst-case reservation ────────────────────────────────
+describe("Stream disconnect — worst-case reservation (Finding #3)", () => {
+  // A stream that ends with NO message_delta / message_stop carrying usage (pure disconnect).
+  // In this case finalUsage remains null → old code charges cost(model,0,0)=0 → free call.
+  // Fix: if no terminal usage observed, reconcile to the WORST-CASE estimate, not 0.
+  it("stream with NO terminal usage event charges worst-case estimate (not 0)", async () => {
+    const enc = new TextEncoder();
+    // Zero useful events — no message_start, no message_delta — just raw text that doesn't parse.
+    // This simulates an abrupt disconnect before any SSE usage metadata arrives.
+    const emptySSE = "data: garbage-not-json\n\n";
+
+    const upstreamFetch = vi.fn().mockImplementation(async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) { c.enqueue(enc.encode(emptySSE)); c.close(); },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      )
+    );
+
+    const keyDO = makeBudgetDO(100);
+    await initialiseDO(keyDO, 100);
+    const eventSink = vi.fn();
+
+    const { env } = await buildEnv({ limitUsd: 100.0, upstreamFetch, eventSink });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 100,
+      keyDO,
+      sessionDO: null,
+    });
+
+    // max_tokens=200 → worst case includes 200 output tokens at claude-sonnet-4 rate.
+    const streamBody = JSON.stringify({ model: "claude-sonnet-4", max_tokens: 200, stream: true, messages: [{ role: "user", content: "hello" }] });
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(streamBody), env);
+
+    // Consume the stream.
+    if (response.body) {
+      const reader = response.body.getReader();
+      let done = false;
+      while (!done) ({ done } = await reader.read());
+    }
+
+    // Allow async reconciliation to settle.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const statusRes = await keyDO.fetch(new Request("https://do/status", { method: "GET" }));
+    const status = (await statusRes.json()) as { reservedUsd: number; spentUsd: number };
+
+    // Reservation must be settled (not still open).
+    expect(status.reservedUsd).toBeCloseTo(0, 6);
+    // spentUsd MUST be > 0: the worst-case estimate was charged, not 0.
+    // cost("claude-sonnet-4", estimatedInput, 200) > 0.
+    expect(status.spentUsd).toBeGreaterThan(0);
+  });
+
+  it("stream with partial usage (message_start only, no message_delta) charges worst-case output tokens", async () => {
+    const enc = new TextEncoder();
+    // Has message_start (input_tokens known) but stream is cut off before message_delta.
+    // So output_tokens is unknown → must charge worst-case max_tokens, not 0 output.
+    const partialSSE =
+      "data: " + JSON.stringify({ type: "message_start", message: { usage: { input_tokens: 10 } } }) + "\n\n";
+    // No message_delta with output_tokens.
+
+    const upstreamFetch = vi.fn().mockImplementation(async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) { c.enqueue(enc.encode(partialSSE)); c.close(); },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      )
+    );
+
+    const keyDO = makeBudgetDO(100);
+    await initialiseDO(keyDO, 100);
+
+    const { env } = await buildEnv({ limitUsd: 100.0, upstreamFetch });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 100,
+      keyDO,
+      sessionDO: null,
+    });
+
+    // max_tokens=500 so worst-case output is significant.
+    const streamBody = JSON.stringify({ model: "claude-sonnet-4", max_tokens: 500, stream: true, messages: [{ role: "user", content: "hello" }] });
+    const handler = createProxyHandler();
+    const response = await handler(makeRequest(streamBody), env);
+
+    if (response.body) {
+      const reader = response.body.getReader();
+      let done = false;
+      while (!done) ({ done } = await reader.read());
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const statusRes = await keyDO.fetch(new Request("https://do/status", { method: "GET" }));
+    const status = (await statusRes.json()) as { reservedUsd: number; spentUsd: number };
+
+    expect(status.reservedUsd).toBeCloseTo(0, 6);
+    // Must charge worst-case: input(10) + output(500), not input(10) + output(0).
+    // cost("claude-sonnet-4", 10, 500) = 10*3/1e6 + 500*15/1e6 ≈ 0.00753
+    // cost("claude-sonnet-4", 10,   0) = 10*3/1e6               ≈ 0.00003
+    // The spend must be closer to the former than the latter.
+    // We assert spentUsd >= cost of 100 output tokens as a conservative floor.
+    const costOf100OutputTokens = (100 * 15) / 1_000_000; // $0.0015
+    expect(status.spentUsd).toBeGreaterThanOrEqual(costOf100OutputTokens);
   });
 });
 

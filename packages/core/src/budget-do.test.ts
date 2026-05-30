@@ -220,17 +220,21 @@ describe("BudgetDO — release (compensating release for session rollback)", () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Task 8: Concurrency — simulate N=50 concurrent calls, exactly ≤1 passes.
+// Task 8 / Finding #4: Concurrency — N=50 concurrent calls, EXACTLY 1 passes, EXACTLY 49 blocked.
 // In production the DO is single-threaded (CF DO serialization guarantee). Here we simulate
 // by driving 50 reserve calls against a $1 budget with a $1 reservation each. Exactly 1
-// should pass; the rest must be blocked. This proves the logic is correct; the production
-// serialization guarantee comes from CF DO architecture (ARCHITECTURE §4c).
+// must pass; exactly 49 must be blocked. The previous ≤1/≥49 assertions allowed 0 passes,
+// which would be a false positive hiding a complete budget blockade. Fixed to exact counts.
+//
+// NOTE: The in-process enqueue() queue is a TEST-ONLY fidelity shim emulating DO serialization.
+// The production guarantee is CF's DO input-gates (single-threaded execution per DO instance).
+// A real Miniflare/workerd concurrency harness is a separate task (out of scope for this PR).
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("BudgetDO — concurrency (DO serial guarantee simulated)", () => {
-  it("N=50 calls against budget with room for 1 → exactly 1 passes, 49 blocked", async () => {
+  it("N=50 calls against budget with room for 1 → EXACTLY 1 passes, EXACTLY 49 blocked", async () => {
     const do_ = await makeInitialisedDO(1.0);
     // Fire all 50 reserve calls. In production these would be serialised by the DO runtime.
-    // In this test they run sequentially (same semantic as DO serialization).
+    // In this test they run sequentially via the internal enqueue() shim (same semantic as DO serialization).
     const results = await Promise.all(
       Array.from({ length: 50 }, () => doReserve(do_, 1.0))
     );
@@ -238,8 +242,9 @@ describe("BudgetDO — concurrency (DO serial guarantee simulated)", () => {
     const passed = results.filter((r) => !r.blocked).length;
     const blocked = results.filter((r) => r.blocked).length;
 
-    expect(passed).toBeLessThanOrEqual(1);
-    expect(blocked).toBeGreaterThanOrEqual(49);
+    // EXACT assertions — not ≤1/≥49, which passes even when 0 succeed.
+    expect(passed).toBe(1);
+    expect(blocked).toBe(49);
   });
 
   it("counter never goes negative after 50 blocked calls", async () => {
@@ -248,6 +253,29 @@ describe("BudgetDO — concurrency (DO serial guarantee simulated)", () => {
     const status = await doStatus(do_);
     expect(status.remainingUsd).toBeGreaterThanOrEqual(0);
     expect(status.spentUsd).toBeGreaterThanOrEqual(0);
+  });
+
+  // Finding #4: interleaved reserve+reconcile must not allow overspend (final spent ≤ limit, remaining ≥ 0).
+  it("interleaved reserve+reconcile: final spent ≤ limit and remaining ≥ 0 (no overspend)", async () => {
+    const LIMIT = 1.0;
+    const do_ = await makeInitialisedDO(LIMIT);
+
+    // Interleave: 25 pairs of (reserve $0.5 then reconcile $0.3) and 25 reserve $0.5 only.
+    // All fired concurrently — the DO's serial queue must serialize them correctly.
+    const ops = [
+      ...Array.from({ length: 25 }, async () => {
+        const r = await doReserve(do_, 0.5);
+        if (!r.blocked && r.reservationId != null) {
+          await doReconcile(do_, r.reservationId, 0.3);
+        }
+      }),
+      ...Array.from({ length: 25 }, () => doReserve(do_, 0.5)),
+    ];
+    await Promise.all(ops);
+
+    const status = await doStatus(do_);
+    expect(status.spentUsd).toBeLessThanOrEqual(LIMIT + 1e-9); // no overspend
+    expect(status.remainingUsd).toBeGreaterThanOrEqual(-1e-9);  // no negative balance
   });
 });
 
@@ -283,5 +311,28 @@ describe("BudgetDO — loop detection", () => {
     const other = await doRecordLoop(do_, "hash-B");
     expect(other.loop).toBe(false);
     expect(other.count).toBe(1);
+  });
+
+  // Finding #5: LoopDetector ring buffer is currently in-memory only.
+  // It IS now persisted to DO storage alongside the budget state (see budget-do.ts).
+  // This test documents that loop counts survive a simulated DO eviction
+  // (a new BudgetDO instance reading from the same storage should see prior counts).
+  it("loop detector state persists across DO eviction (same storage, new instance)", async () => {
+    // Step 1: record 9 hashes in the first DO instance.
+    const fakeState = new FakeState();
+    const env = { ANTHROPIC_UPSTREAM: "https://api.anthropic.com", FAILURE_MODE: "closed" as const };
+    const do1 = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+    await doInit(do1, 100);
+    for (let i = 0; i < 9; i++) {
+      await doRecordLoop(do1, "hash-persist");
+    }
+
+    // Step 2: simulate eviction — create a new BudgetDO instance on the SAME storage.
+    const do2 = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+    const result = await doRecordLoop(do2, "hash-persist");
+
+    // The 10th call on the new instance must trigger loop detection (count persisted).
+    expect(result.loop).toBe(true);
+    expect(result.count).toBe(10);
   });
 });
