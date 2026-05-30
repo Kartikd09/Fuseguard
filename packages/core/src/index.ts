@@ -165,7 +165,7 @@ async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupR
 
   // C3 FIX: no budget configured must NOT mean unlimited spend (Infinity). That defeats the
   // product. A key with no budget has hasBudget=false; the proxy then applies FAILURE_MODE:
-  //   closed → block (enforcement_unavailable), open → forward unmetered (self-host opt-in).
+  //   closed → block (402 no_budget), open → forward unmetered (self-host opt-in).
   const hasBudget = keyBudget != null;
   const limitUsd = keyBudget?.limit_value ?? 0;
 

@@ -42,7 +42,7 @@ export default function CreateKeyButton({ keyCount, maxKeys }: CreateKeyButtonPr
   const router = useRouter();
 
   // -1 = unlimited (Pro). Otherwise at-limit when count reaches the plan ceiling.
-  const isAtFreeLimit = maxKeys !== -1 && keyCount >= maxKeys;
+  const isAtKeyLimit = maxKeys !== -1 && keyCount >= maxKeys;
 
   function openModal() {
     setModalState("form");
@@ -104,14 +104,14 @@ export default function CreateKeyButton({ keyCount, maxKeys }: CreateKeyButtonPr
         type="button"
         onClick={openModal}
         title={
-          isAtFreeLimit
+          isAtKeyLimit
             ? "Free tier allows 1 key. Upgrade to Pro for unlimited."
             : "Create a new API key"
         }
       >
         <Plus className="h-4 w-4" />
         Create key
-        {isAtFreeLimit && (
+        {isAtKeyLimit && (
           <Badge variant="warning" className="ml-1">Pro</Badge>
         )}
       </Button>
@@ -126,7 +126,7 @@ export default function CreateKeyButton({ keyCount, maxKeys }: CreateKeyButtonPr
             </DialogDescription>
           </DialogHeader>
 
-          {isAtFreeLimit && (
+          {isAtKeyLimit && (
             <div className="rounded-lg border border-yellow-700/50 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-400 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <span>
