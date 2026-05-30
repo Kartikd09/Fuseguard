@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const LEMON_SQUEEZY_CHECKOUT_URL =
   process.env["LEMON_SQUEEZY_CHECKOUT_URL"] ??
-  "https://fuseguard.lemonsqueezy.com/checkout/buy/placeholder";
+  "https://fuseguard.lemonsqueezy.com/checkout/buy/ba58cb88-b318-471d-9ab6-6fd9d801912b";
 
 const FREE_FEATURES = [
   "1 API key",
@@ -35,7 +35,16 @@ const PRO_FEATURES = [
 
 export default async function BillingPage() {
   const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
   const subscription = await fetchSubscription(supabase);
+
+  // Pass org_id as checkout custom data so the webhook can attribute the subscription.
+  const { data: membership } = await supabase
+    .from("memberships").select("org_id").eq("user_id", user?.id ?? "").limit(1).maybeSingle();
+  const orgId = (membership as { org_id: string } | null)?.org_id ?? "";
+  const checkoutUrl = orgId
+    ? `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[custom][org_id]=${encodeURIComponent(orgId)}`
+    : LEMON_SQUEEZY_CHECKOUT_URL;
 
   const isPro = subscription?.status === "active";
   const renewsAt = subscription?.renews_at
@@ -122,7 +131,7 @@ export default async function BillingPage() {
               Pro
             </CardTitle>
             <div className="pt-1">
-              <span className="text-3xl font-bold text-foreground">$19</span>
+              <span className="text-3xl font-bold text-foreground">$15</span>
               <span className="text-sm text-muted-foreground ml-1">/ month</span>
             </div>
             <CardDescription>billed monthly, cancel anytime</CardDescription>
@@ -144,7 +153,7 @@ export default async function BillingPage() {
             ) : (
               <Button asChild className="w-full">
                 <a
-                  href={LEMON_SQUEEZY_CHECKOUT_URL}
+                  href={checkoutUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -190,7 +199,7 @@ export default async function BillingPage() {
               </div>
             </div>
             <Button variant="outline" asChild className="border-yellow-700/50 text-yellow-300 hover:text-yellow-200">
-              <a href={LEMON_SQUEEZY_CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+              <a href={checkoutUrl} target="_blank" rel="noopener noreferrer">
                 Unlock loop detection →
               </a>
             </Button>

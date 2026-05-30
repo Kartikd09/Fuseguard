@@ -56,6 +56,9 @@ export async function POST(request: Request) {
     );
   }
 
+  // Free tier limit enforced atomically by DB trigger check_api_key_limit().
+  // The insert error handler below translates key_limit_exceeded → 403 + upgrade:true.
+
   // Fail closed: real AES-256-GCM encryption is mandatory. No master key → refuse
   // (never store the customer key in plaintext or a placeholder).
   const masterKey = process.env.FG_MASTER_KEY;
@@ -82,19 +85,19 @@ export async function POST(request: Request) {
   }
 
   // Derive org explicitly from the caller's membership (no implicit single-row trust).
-  const { data: membership, error: orgError } = await supabase
+  const { data: membershipForInsert, error: orgError } = await supabase
     .from("memberships")
     .select("org_id")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 
-  if (orgError || !membership) {
+  if (orgError || !membershipForInsert) {
     return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
 
   const { error: insertError } = await supabase.from("api_keys").insert({
-    org_id: (membership as { org_id: string }).org_id,
+    org_id: (membershipForInsert as { org_id: string }).org_id,
     label: label.trim(),
     fuseguard_key_hash: fuseGuardKeyHash,
     fuseguard_key_prefix: keyPrefix,
@@ -105,6 +108,13 @@ export async function POST(request: Request) {
   });
 
   if (insertError) {
+    // DB trigger fires when plan key limit is exceeded — surface as upgrade prompt.
+    if (insertError.message?.includes("key_limit_exceeded")) {
+      return NextResponse.json(
+        { error: "Free tier allows 1 API key. Upgrade to Pro for unlimited keys.", upgrade: true },
+        { status: 403 }
+      );
+    }
     console.error("[keys] insert failed:", insertError);
     return NextResponse.json({ error: "Failed to create key" }, { status: 500 });
   }

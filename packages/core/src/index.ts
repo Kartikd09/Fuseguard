@@ -15,6 +15,7 @@ export interface Env {
   readonly FG_MASTER_KEY: string;
   readonly SUPABASE_SERVICE_ROLE_KEY: string;
   readonly SUPABASE_URL: string;
+  readonly LEMON_SQUEEZY_WEBHOOK_SECRET?: string;
   // Self-host fallback (no Supabase) — set these to use without a DB.
   readonly SELFHOST_FUSEGUARD_KEY_HASH?: string;
   readonly SELFHOST_ANTHROPIC_KEY?: string;
@@ -50,6 +51,21 @@ async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
   if (!res.ok) {
     console.error(`[fuseguard:ingest] ${table} insert failed: ${res.status}`);
   }
+}
+
+async function sbUpsert(env: Env, table: string, onConflict: string, body: unknown): Promise<void> {
+  // on_conflict must be a query param, not a header (PostgREST spec).
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) console.error(`[fuseguard:ingest] ${table} upsert failed: ${res.status}`);
 }
 
 // Supabase REST returns bytea columns as \xHEX where the bytes are the UTF-8 encoding
@@ -205,6 +221,136 @@ function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void 
   };
 }
 
+// ── Lemon Squeezy webhook handler ────────────────────────────────────────────────────────────
+
+// Events we act on — ignore all others to prevent accidental downgrades on unrelated events.
+const LS_HANDLED_EVENTS = new Set([
+  "subscription_created",
+  "subscription_updated",
+  "subscription_cancelled",
+  "subscription_expired",
+]);
+
+// Constant-time HMAC-SHA256 verify. Parses hex defensively — rejects malformed signatures cleanly.
+async function verifyLsSignature(body: string, signature: string, secret: string): Promise<boolean> {
+  // Reject empty or non-hex signatures before touching crypto — avoids NaN/exception paths.
+  if (!/^[0-9a-f]{1,}$/i.test(signature) || signature.length % 2 !== 0) return false;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const sigBytes = new Uint8Array((signature.match(/.{2}/g) ?? []).map((b) => parseInt(b, 16)));
+  return crypto.subtle.verify("HMAC", key, sigBytes, enc.encode(body));
+}
+
+async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
+  if (!env.LEMON_SQUEEZY_WEBHOOK_SECRET) {
+    return new Response(JSON.stringify({ error: "webhook not configured" }), { status: 500 });
+  }
+
+  const body = await request.text();
+  const signature = request.headers.get("x-signature") ?? "";
+
+  const valid = await verifyLsSignature(body, signature, env.LEMON_SQUEEZY_WEBHOOK_SECRET).catch(() => false);
+  if (!valid) {
+    console.error("[fuseguard:webhook] invalid signature");
+    return new Response(JSON.stringify({ error: "invalid signature" }), { status: 401 });
+  }
+
+  let payload: {
+    meta?: { event_name?: string; custom_data?: { org_id?: string } };
+    data?: {
+      attributes?: {
+        status?: string;
+        renews_at?: string;
+        order_id?: number;
+        customer_id?: number;
+      };
+      id?: string;
+    };
+  };
+
+  try {
+    payload = JSON.parse(body) as typeof payload;
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid JSON" }), { status: 400 });
+  }
+
+  const eventName = payload.meta?.event_name ?? "";
+
+  // Ignore unrelated events — prevents accidental plan downgrades from payment/other events.
+  if (!LS_HANDLED_EVENTS.has(eventName)) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
+  const orgId = payload.meta?.custom_data?.org_id;
+  const attrs = payload.data?.attributes;
+  const lsSubId = payload.data?.id;
+
+  if (!orgId || !attrs || !lsSubId) {
+    console.warn("[fuseguard:webhook] missing org_id in custom_data", eventName);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
+  // HIGH: verify org_id exists in DB — custom_data is set via public checkout URL query param
+  // so a signed-but-attacker-influenced org_id is possible. Reject unknown orgs.
+  const orgRows = await sbGet<{ id: string }>(env, "orgs", `id=eq.${encodeURIComponent(orgId)}&select=id&limit=1`).catch(() => []);
+  if (orgRows.length === 0) {
+    console.warn("[fuseguard:webhook] org_id not found in DB", orgId, eventName);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
+  // Map LS status to our enum. Only explicit cancellation events reach here (gated above).
+  const statusMap: Record<string, string> = {
+    active: "active",
+    past_due: "past_due",
+    cancelled: "cancelled",
+    expired: "cancelled",
+    unpaid: "past_due",
+  };
+  const status = statusMap[attrs.status ?? ""] ?? "cancelled";
+
+  const plans = await sbGet<{ id: string }>(env, "plans", "name=eq.pro&select=id&limit=1").catch(() => []);
+  const proPlanId = plans[0]?.id;
+  const freePlans = await sbGet<{ id: string }>(env, "plans", "name=eq.free&select=id&limit=1").catch(() => []);
+  const freePlanId = freePlans[0]?.id;
+
+  if (!proPlanId || !freePlanId) {
+    console.error("[fuseguard:webhook] plans not found in DB");
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
+  const planId = status === "active" ? proPlanId : freePlanId;
+
+  // Upsert subscription — idempotent on org_id (LS may replay).
+  await sbUpsert(env, "subscriptions", "org_id", {
+    org_id: orgId,
+    lemon_squeezy_subscription_id: lsSubId,
+    lemon_squeezy_order_id: attrs.order_id?.toString() ?? null,
+    lemon_squeezy_customer_id: attrs.customer_id?.toString() ?? null,
+    plan_id: planId,
+    status,
+    renews_at: attrs.renews_at ?? null,
+    updated_at: new Date().toISOString(),
+  });
+
+  // Sync org plan_id — log on failure so stale plan_id is observable.
+  const patchRes = await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${encodeURIComponent(orgId)}`, {
+    method: "PATCH",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  if (!patchRes.ok) {
+    console.error(`[fuseguard:webhook] org plan_id sync failed: ${patchRes.status} org=${orgId}`);
+  }
+
+  console.log(`[fuseguard:webhook] ${eventName} org=${orgId} status=${status}`);
+  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+}
+
 // ── Worker export ─────────────────────────────────────────────────────────────────────────────
 
 export default {
@@ -213,6 +359,11 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ status: "ok" });
+    }
+
+    // Lemon Squeezy webhook
+    if (request.method === "POST" && url.pathname === "/webhook/lemon-squeezy") {
+      return handleLsWebhook(request, env);
     }
 
     // keyId threaded synchronously from lookupKey — no second DB round-trip, no race.

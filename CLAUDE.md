@@ -1,103 +1,138 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
+**Read this first on every new session before touching any code.**
 
 ## Project: FuseGuard
 
-The circuit breaker for AI agents. A drop-in proxy between an app and the LLM provider
-(Anthropic Claude first) that enforces token/$ budgets at runtime — blocking calls
-*before* a budget is breached, and killing runaway loops. Open-core: MIT proxy + paid hosted dashboard.
+Circuit breaker for AI agents. Drop-in proxy between app and Anthropic API that enforces
+token/$ budgets at runtime — blocks calls *before* a breach, kills runaway loops.
+Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 
-See `docs/PRD.md` for the full product spec and `docs/ARCHITECTURE.md` for system design.
+- PRD: `docs/PRD.md` | Architecture: `docs/ARCHITECTURE.md` | Roadmap: `docs/ROADMAP.md`
+- Architect Notebook (Notion): https://www.notion.so/370ccc9d6d8081edb0fbc41c7d8a5a83
 
-For a fast architecture digest (read this instead of re-scanning the repo):
-@.claude/CODEMAP.md
+## Current State (last updated: 2026-05-31)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 0 — Scaffold | ✅ Done | Monorepo, CI, branch protection |
+| 1 — Proxy core | ✅ Done | 136 tests, budget DO, loop detection, streaming |
+| 2 — Dashboard | ✅ Done | Auth, keys, budgets, spend chart, RLS, Worker wired |
+| 3 — Billing | ✅ Done | LS webhook, checkout, free tier trigger |
+| 4 — Harden | ⬜ Next | Security pass, latency NFR, DO cold-start |
+| 5 — Launch | ⬜ | CF Pages deploy, landing page, README quickstart |
+
+**Active branch:** `feat/phase3-billing` → PR #14 open
+**Working dir:** `/home/kartik/Kartik/Claude-projects/fuseguard-dashboard`
+
+## Infrastructure
+
+| Service | Details |
+|---------|---------|
+| Supabase | Project `omywdgbasfisgftktxij` (Mumbai) |
+| CF Worker staging | `fuseguard-proxy-staging.kartikds009.workers.dev` |
+| Dashboard (local) | `http://localhost:3000` — run `npm run dev` in `packages/hosted/dashboard` |
+| Lemon Squeezy | Test mode, store `fuseguard`, $15/mo Pro plan |
+| GitHub | `github.com/Kartikd09/Fuseguard` |
+
+## Repo Structure
+
+```
+packages/
+  core/               # MIT — CF Worker proxy (budget DO, loop detection, crypto, pricing)
+    src/index.ts      # Worker entry — Supabase key lookup, webhook handler, event emit
+    src/proxy/        # Proxy handler, forward, SSRF allowlist
+    src/budget-do.ts  # Durable Object — reserve/reconcile, atomic counters
+    wrangler.toml     # CF Worker config (staging + production envs)
+  hosted/
+    dashboard/        # PROPRIETARY — Next.js 15 dashboard (CF Pages)
+      src/app/        # Pages: dashboard, keys, budgets, billing, setup, login
+      src/app/api/    # API routes: /keys, /keys/[id], /budgets, /budgets/[id]
+      src/lib/        # Supabase helpers, crypto, spend aggregation
+supabase/
+  migrations/         # All schema migrations (apply with `supabase db push`)
+```
+
+## Key Facts
+
+- **Budget enforcement:** Worker reserves worst-case cost (input + max_tokens × price) pre-flight,
+  reconciles actual cost after response. Durable Object serializes concurrent access — no races.
+- **Key encryption:** AES-256-GCM. `FG_MASTER_KEY` (wrangler secret) encrypts customer Anthropic keys.
+  Plaintext never stored, never logged. `hexToBase64()` handles Supabase bytea `\xHEX` format.
+- **Webhook:** `POST /webhook/lemon-squeezy` — HMAC-SHA256 verify, org_id DB-validated,
+  event allowlist (4 events only), idempotent upsert on `org_id`.
+- **Free tier:** 1 key max enforced by DB trigger `check_api_key_limit()` (TOCTOU-safe).
+- **RLS:** All tables org-scoped. `anthropic_key_ciphertext/iv` column-revoked from `authenticated`.
 
 ## Golden Rules (NON-NEGOTIABLE)
 
-1. **NEVER commit directly to `main` or `develop`.** All work happens on `feat/*`, `fix/*`,
-   `chore/*`, or `docs/*` branches and merges via Pull Request. See `CONTRIBUTING.md`.
-2. **NEVER commit secrets.** No API keys, tokens, `.env` files. Use `.env.example` for shape.
-   gitleaks + secret-scanning will block you.
-3. **TDD for the budget-enforcement core.** Write the failing test first. The kill-switch
-   logic is the product — it must be provably correct.
-4. **Security review before any merge that touches** auth, API keys, the proxy request path,
-   or billing. Use the `security-reviewer` agent.
-5. **Every PR is reviewed** by the `code-reviewer` agent before merge.
+1. **Never commit to `main` or `develop` directly.** Feature branches + PR only.
+2. **Never commit secrets.** Use `.env.example`. gitleaks blocks you.
+3. **TDD for proxy core.** Write failing test first. 136 tests must stay green.
+4. **Run Opus 4.8 code-reviewer + security-reviewer after every feature.** Not optional.
+5. **Every PR reviewed** before merge. Fix CRITICAL/HIGH before merging.
 
-## Multi-Agent Team
-
-This project is built by an orchestrated agent team. Roles are defined in `.claude/agents/`.
-The orchestration workflow and handoffs are in `docs/AGENT_WORKFLOW.md`.
-
-| Agent | Responsibility |
-|-------|----------------|
-| `planner` | PRD, architecture, task breakdown, phase planning |
-| `dev` | Feature implementation on branches |
-| `qa` | Test authoring, coverage, edge cases (TDD) |
-| `security-reviewer` | Vuln scan, secrets, OWASP, threat model |
-| `cloud-admin` | Cloudflare/Supabase deploy, infra-as-code, CI/CD |
-| `code-reviewer` | Quality gate on every PR |
-
-## Commands
-
-> Tooling is added as the stack is built. Update this section when scripts land.
+## Workflow
 
 ```bash
-# Install (once package.json exists)
-npm install
+# Start dev server (dashboard)
+cd packages/hosted/dashboard && npm run dev
 
-# Proxy (Cloudflare Worker) — local dev
-npm run dev:proxy        # wrangler dev
+# Run all tests
+npm test   # from repo root
 
-# Dashboard (Next.js)
-npm run dev:dashboard
+# Typecheck
+cd packages/core && npx tsc --noEmit
+cd packages/hosted/dashboard && npx tsc --noEmit
 
-# Tests (TDD — run constantly)
-npm test                 # all
-npm test -- <pattern>    # single file/pattern
-npm run test:watch
-npm run test:coverage    # must stay >= 80% on core
+# Deploy Worker to staging
+cd packages/core && CLOUDFLARE_API_TOKEN=... npx wrangler deploy --env staging
 
-# Lint / typecheck (must pass before PR)
-npm run lint
-npm run typecheck
+# Push DB migrations
+supabase db push --yes
 
-# Security
-npm run secrets:scan     # gitleaks
+# Create PR
+gh pr create --base develop --head feat/your-branch
 ```
 
-## Architecture (big picture)
+## Secrets (never commit — for reference only)
+
+- `FG_MASTER_KEY` — 32-byte base64, encrypts Anthropic keys at rest
+- `SUPABASE_URL` — `https://omywdgbasfisgftktxij.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY` — Worker only, never in dashboard bundle
+- `LEMON_SQUEEZY_WEBHOOK_SECRET` — 40-char hex, HMAC signing
+- `CLOUDFLARE_API_TOKEN` — CF deploy token
+
+## Architecture Diagram
 
 ```
-[Client app] → [FuseGuard Proxy: CF Worker + Durable Objects] → [api.anthropic.com]
-                        │  token counting + budget check (Durable Object counters)
-                        │  block if over budget / loop detected
-                        └─→ usage events → Supabase (Postgres)
-[Dashboard: Next.js on CF Pages] ← reads Supabase
-[Lemon Squeezy] → webhook → Supabase (plan/limits)
+[Client] → x-api-key: fg_live_...
+              ↓
+[CF Worker: fuseguard-proxy-staging.workers.dev]
+  1. Hash FG key → Supabase lookup → AES-GCM decrypt Anthropic key
+  2. Estimate worst-case cost
+  3. Reserve in Budget Durable Object (atomic)
+  4. Block (402) or Forward to api.anthropic.com
+  5. Reconcile actual cost → release unused reservation
+  6. Emit usage_events / blocks → Supabase (async)
+              ↓
+[api.anthropic.com]
+
+[Next.js Dashboard: localhost:3000]
+  ← reads Supabase (RLS-scoped per org)
+  → /api/keys, /api/budgets (authenticated)
+
+[Lemon Squeezy webhook]
+  → POST /webhook/lemon-squeezy on Worker
+  → updates subscriptions + orgs.plan_id
 ```
 
-- **Proxy core (MIT, OSS):** request interception, token accounting, budget enforcement,
-  loop detection. The valuable, trust-critical code is open.
-- **Hosted (proprietary):** managed dashboard, team features, alerts, billing.
-
-## Coding Standards
+## Code Standards
 
 - Files < 400 lines ideal, 800 max. Functions < 50 lines. Max 4 nesting levels.
-- `camelCase` vars/fns, `PascalCase` types, `UPPER_SNAKE_CASE` consts, `is/has/should/can` bools.
-- Immutability: new objects, don't mutate in place.
-- Errors explicit at boundaries (proxy input, Anthropic responses, webhooks). Never swallow.
-- Comments: one-line, WHY only. No WHAT.
-- Validate everything external (incoming requests, Anthropic responses, LS webhooks).
-
-## Critical Technical Invariants
-
-- **Pre-flight budget check must be conservative:** estimate worst-case output tokens before
-  allowing a call; reconcile with actual usage after. Never let a call through that *could*
-  breach the ceiling.
-- **Concurrency:** budget counters live in a single Durable Object per key/session to avoid
-  race conditions on concurrent calls.
-- **Never log full prompt/response bodies** by default (privacy + compliance). Log token
-  counts + metadata only.
-- **Fail closed on the paid tier** (block on uncertainty), **fail open is opt-in** for OSS self-host.
+- `camelCase` vars/fns, `PascalCase` types, `UPPER_SNAKE_CASE` consts.
+- Immutability: new objects, never mutate in place.
+- Errors explicit at system boundaries. Never swallow.
+- Comments: one-line, WHY only. No WHAT, no task references.
+- Never log prompt/response bodies. Token counts + metadata only.
