@@ -30,7 +30,7 @@ const client = new Anthropic({
 // Your Anthropic key lives server-side — FuseGuard decrypts + forwards it.
 // You never send it in client code.
 const message = await client.messages.create({
-  model: "claude-sonnet-4",
+  model: "claude-haiku-4-5",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hello, world!" }],
 });`;
@@ -40,7 +40,7 @@ const CURL_SNIPPET = (keyPrefix: string) => `curl ${PROXY_BASE_URL}/v1/messages 
   -H "anthropic-version: 2023-06-01" \\
   -H "x-api-key: ${keyPrefix}••••••••" \\
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-haiku-4-5",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello, world!"}]
   }'`;

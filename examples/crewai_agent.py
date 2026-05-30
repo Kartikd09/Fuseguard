@@ -21,7 +21,7 @@ from crewai.llm import LLM
 
 # Route CrewAI's LLM through FuseGuard. Budget enforcement + loop kill happen transparently.
 llm = LLM(
-    model="anthropic/claude-sonnet-4",
+    model="anthropic/claude-haiku-4-5",
     base_url=os.environ["FUSEGUARD_BASE_URL"],
     # Send the FuseGuard key — your real Anthropic key lives inside FuseGuard.
     api_key=os.environ["FUSEGUARD_KEY"],

@@ -28,7 +28,7 @@ client = Anthropic(
 
 try:
     message = client.messages.create(
-        model="claude-sonnet-4",
+        model="claude-haiku-4-5",
         max_tokens=256,
         messages=[{"role": "user", "content": "In one sentence, what is a circuit breaker?"}],
     )

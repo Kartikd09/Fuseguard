@@ -16,7 +16,7 @@
 // 402s. The numbers here tell us "by how much" so we can document guidance (ARCHITECTURE §4a).
 
 import { describe, expect, it } from "vitest";
-import { cost, PRICING } from "./pricing.js";
+import { cost } from "./pricing.js";
 import { estimateInputTokens, estimateWorstCase, type MessagesRequest } from "./estimator.js";
 
 // ---------------------------------------------------------------------------
@@ -83,7 +83,8 @@ function runScenario(
 // Scenario matrix (fully deterministic — no Math.random())
 // ---------------------------------------------------------------------------
 
-const MODELS = Object.keys(PRICING); // ["claude-opus-4", "claude-sonnet-4", "claude-haiku-3.5"]
+// One representative model per distinct rate tier (PRICING has aliases that share rates).
+const MODELS = ["claude-opus-4", "claude-sonnet-4", "claude-haiku-3.5"];
 
 // Input size buckets: [label, systemChars, messageChars]
 const INPUT_SIZES: Array<[string, number, number]> = [

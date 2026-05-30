@@ -78,15 +78,17 @@ Two measurements per call:
   when present). This is the authoritative cost written to `usage_events` and used to release the
   unused portion of the reservation back into the DO counter.
 
-**Pricing table as config** (`packages/core/src/pricing.ts`, USD per 1M tokens — verify against
-Anthropic's live pricing at build time; values illustrative):
+**Pricing table as config** (`packages/core/src/pricing.ts`, USD per 1M tokens — kept current
+with Anthropic's published rates; re-verify on each model launch):
 
 ```ts
+// USD per 1M tokens — verified against Anthropic pricing 2026-05-31. Aliases + dated IDs both listed.
 export const PRICING: Record<string, { input: number; output: number }> = {
-  "claude-opus-4":   { input: 15.0, output: 75.0 },
-  "claude-sonnet-4": { input:  3.0, output: 15.0 },
-  "claude-haiku-3.5":{ input:  0.8, output:  4.0 },
-  // cache read/write multipliers handled in cost fn
+  "claude-opus-4-5":   { input: 5.0,  output: 25.0 },  // Opus 4.5+
+  "claude-sonnet-4-5": { input: 3.0,  output: 15.0 },
+  "claude-haiku-4-5":  { input: 1.0,  output:  5.0 },
+  // legacy: opus-4/4.1 ($15/$75), haiku-3.5 ($0.8/$4) kept for back-compat
+  // cache read/write multipliers (write 1.25×, read 0.1×) handled in cost fn
 };
 ```
 

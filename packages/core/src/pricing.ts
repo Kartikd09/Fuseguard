@@ -1,6 +1,8 @@
 // Pricing config + cost helpers. MIT/OSS — must be inspectable (ARCHITECTURE §3, §7).
 //
-// USD per 1M tokens. Verify against Anthropic live pricing at build time; values illustrative.
+// USD per 1M tokens. Source: platform.claude.com/docs/about-claude/pricing (verified 2026-05-31).
+// Aliases + dated IDs are both listed so either form is priced exactly, not via the fallback.
+// Legacy Opus 4 / 4.1 ($15/$75) kept for back-compat; current Opus 4.5+ is $5/$25.
 
 export type PriceKind = "input" | "output";
 
@@ -9,10 +11,32 @@ export interface ModelPrice {
   readonly output: number;
 }
 
+const OPUS = { input: 5.0, output: 25.0 };          // Opus 4.5 / 4.6 / 4.7 / 4.8
+const OPUS_LEGACY = { input: 15.0, output: 75.0 };  // Opus 4 / 4.1 (deprecated)
+const SONNET = { input: 3.0, output: 15.0 };        // Sonnet 4 / 4.5 / 4.6
+const HAIKU = { input: 1.0, output: 5.0 };          // Haiku 4.5
+const HAIKU_LEGACY = { input: 0.8, output: 4.0 };   // Haiku 3.5 (retired)
+
 export const PRICING: Record<string, ModelPrice> = {
-  "claude-opus-4": { input: 15.0, output: 75.0 },
-  "claude-sonnet-4": { input: 3.0, output: 15.0 },
-  "claude-haiku-3.5": { input: 0.8, output: 4.0 },
+  // Opus (current)
+  "claude-opus-4-8": OPUS,
+  "claude-opus-4-7": OPUS,
+  "claude-opus-4-6": OPUS,
+  "claude-opus-4-5": OPUS,
+  // Opus (legacy / deprecated)
+  "claude-opus-4-1": OPUS_LEGACY,
+  "claude-opus-4-1-20250805": OPUS_LEGACY,
+  "claude-opus-4": OPUS_LEGACY,
+  // Sonnet
+  "claude-sonnet-4-6": SONNET,
+  "claude-sonnet-4-5": SONNET,
+  "claude-sonnet-4-5-20250929": SONNET,
+  "claude-sonnet-4": SONNET,
+  // Haiku
+  "claude-haiku-4-5": HAIKU,
+  "claude-haiku-4-5-20251001": HAIKU,
+  "claude-haiku-3.5": HAIKU_LEGACY,
+  "claude-3-5-haiku-20241022": HAIKU_LEGACY,
   // cache read/write multipliers handled in cost()
 };
 
@@ -23,6 +47,8 @@ const CACHE_WRITE_MULTIPLIER = 1.25;
 const CACHE_READ_MULTIPLIER = 0.1;
 
 // Unknown model ⇒ fail-closed: price as the most-expensive known model (ARCHITECTURE §3).
+// The floor is intentionally the legacy-Opus rate ($15/$75 — the table max). If legacy Opus
+// is ever removed, pin the floor explicitly so it doesn't silently drop and under-reserve.
 // Throws if the table is empty — returning 0 would silently un-fail-closed (charge nothing).
 function mostExpensive(kind: PriceKind): number {
   const prices = Object.values(PRICING);

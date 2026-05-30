@@ -14,7 +14,7 @@ curl -sS -w '\nHTTP %{http_code}\n' \
   -H "x-api-key: ${FUSEGUARD_KEY}" \
   -H "anthropic-version: 2023-06-01" \
   -d '{
-    "model": "claude-sonnet-4",
+    "model": "claude-haiku-4-5",
     "max_tokens": 128,
     "messages": [{"role": "user", "content": "Say hello in one word."}]
   }'
