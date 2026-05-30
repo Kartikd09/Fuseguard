@@ -122,20 +122,24 @@ export default async function LandingPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-left px-5 py-3 font-medium"></th>
-                <th className="px-5 py-3 font-medium text-muted-foreground text-center">LangSmith / Helicone / Langfuse</th>
-                <th className="px-5 py-3 font-semibold text-primary text-center">FuseGuard</th>
+                <th scope="col" className="text-left px-5 py-3 font-medium"><span className="sr-only">Feature</span></th>
+                <th scope="col" className="px-5 py-3 font-medium text-muted-foreground text-center">LangSmith / Helicone / Langfuse</th>
+                <th scope="col" className="px-5 py-3 font-semibold text-primary text-center">FuseGuard</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {WEDGE_ROWS.map((r) => (
                 <tr key={r.label}>
-                  <td className="px-5 py-3">{r.label}</td>
+                  <th scope="row" className="px-5 py-3 font-normal text-left">{r.label}</th>
                   <td className="px-5 py-3 text-center">
-                    {r.them ? <Check className="h-4 w-4 text-emerald-500 inline" /> : <X className="h-4 w-4 text-muted-foreground inline" />}
+                    {r.them
+                      ? <Check className="h-4 w-4 text-emerald-500 inline" aria-label="Yes" />
+                      : <X className="h-4 w-4 text-muted-foreground inline" aria-label="No" />}
                   </td>
                   <td className="px-5 py-3 text-center">
-                    {r.us ? <Check className="h-4 w-4 text-primary inline" /> : <X className="h-4 w-4 text-muted-foreground inline" />}
+                    {r.us
+                      ? <Check className="h-4 w-4 text-primary inline" aria-label="Yes" />
+                      : <X className="h-4 w-4 text-muted-foreground inline" aria-label="No" />}
                   </td>
                 </tr>
               ))}
