@@ -11,12 +11,13 @@ export async function resolveActiveOrgId(supabase: SupabaseClient): Promise<stri
   // MVP: oldest owner membership = primary org. member-only users are not supported yet
   // (Pro team feature). Stable secondary sort on org_id prevents non-determinism when
   // two orgs share a created_at timestamp. Upgrade path: read fg_active_org cookie first.
+  // Order by memberships.created_at (proxy for org age) + org_id for stable tie-break.
   const { data, error } = await supabase
     .from("memberships")
     .select("org_id, orgs(id, created_at)")
     .eq("role", "owner")
-    .order("created_at", { referencedTable: "orgs", ascending: true })
-    .order("org_id", { referencedTable: "orgs", ascending: true })
+    .order("created_at", { ascending: true })
+    .order("org_id", { ascending: true })
     .limit(1)
     .maybeSingle();
 
