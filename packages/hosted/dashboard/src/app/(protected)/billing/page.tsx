@@ -2,7 +2,7 @@
 // Billing page — Free vs Pro ($19/mo) tier display. Lemon Squeezy checkout placeholder.
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchSubscription } from "@/lib/data/queries";
+import { fetchSubscription, resolveActiveOrgId } from "@/lib/data/queries";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,13 +35,8 @@ const PRO_FEATURES = [
 
 export default async function BillingPage() {
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const subscription = await fetchSubscription(supabase);
-
-  // Pass org_id as checkout custom data so the webhook can attribute the subscription.
-  const { data: membership } = await supabase
-    .from("memberships").select("org_id").eq("user_id", user?.id ?? "").limit(1).maybeSingle();
-  const orgId = (membership as { org_id: string } | null)?.org_id ?? "";
+  const orgId = await resolveActiveOrgId(supabase);
+  const subscription = orgId ? await fetchSubscription(supabase, orgId) : null;
   let checkoutUrl = LEMON_SQUEEZY_CHECKOUT_URL;
   if (orgId) {
     const u = new URL(LEMON_SQUEEZY_CHECKOUT_URL);

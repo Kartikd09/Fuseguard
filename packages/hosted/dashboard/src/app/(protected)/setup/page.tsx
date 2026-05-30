@@ -2,7 +2,7 @@
 // Setup / Onboarding page — proxy URL, x-api-key instructions, cURL snippet.
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchApiKeys } from "@/lib/data/queries";
+import { fetchApiKeys, resolveActiveOrgId } from "@/lib/data/queries";
 import CopyButton from "@/components/ui/CopyButton";
 import EmptyState from "@/components/ui/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,7 +54,9 @@ function StepBadge({ n }: { n: number | string }) {
 
 export default async function SetupPage() {
   const supabase = await createServerSupabaseClient();
-  const keys = await fetchApiKeys(supabase);
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
+  const keys = await fetchApiKeys(supabase, orgId);
   const firstKey = keys[0];
 
   return (

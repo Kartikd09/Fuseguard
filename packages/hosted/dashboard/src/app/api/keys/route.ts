@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateFuseGuardKey, hashKey } from "@/lib/crypto/keys";
 import { encryptSecret } from "@/lib/crypto/encrypt";
+import { resolveActiveOrgId } from "@/lib/data/queries";
 
 interface CreateKeyBody {
   label: string;
@@ -84,20 +85,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Key storage is not configured" }, { status: 503 });
   }
 
-  // Derive org explicitly from the caller's membership (no implicit single-row trust).
-  const { data: membershipForInsert, error: orgError } = await supabase
-    .from("memberships")
-    .select("org_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (orgError || !membershipForInsert) {
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) {
     return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
 
   const { error: insertError } = await supabase.from("api_keys").insert({
-    org_id: (membershipForInsert as { org_id: string }).org_id,
+    org_id: orgId,
     label: label.trim(),
     fuseguard_key_hash: fuseGuardKeyHash,
     fuseguard_key_prefix: keyPrefix,
