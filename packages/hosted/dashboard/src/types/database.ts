@@ -94,9 +94,13 @@ export interface Subscription {
   id: string;
   org_id: string;
   lemon_squeezy_subscription_id: string | null;
+  lemon_squeezy_order_id: string | null;
+  lemon_squeezy_customer_id: string | null;
   plan_id: string;
   status: SubscriptionStatus;
   renews_at: string | null;
   created_at: string;
   updated_at: string;
+  // Joined from plans table when fetched with select("*, plans(name)")
+  plans?: { name: PlanName } | null;
 }

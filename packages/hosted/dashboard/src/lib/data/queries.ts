@@ -92,7 +92,7 @@ export async function fetchSubscription(
 ): Promise<Subscription | null> {
   const { data, error } = await supabase
     .from("subscriptions")
-    .select("*")
+    .select("*, plans(name)")
     .limit(1)
     .single();
 

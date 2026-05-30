@@ -224,11 +224,17 @@ function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void 
 // ── Lemon Squeezy webhook handler ────────────────────────────────────────────────────────────
 
 // Events we act on — ignore all others to prevent accidental downgrades on unrelated events.
+// Events that carry a subscription status we act on.
+// subscription_updated covers most state transitions (active, past_due, etc.).
+// subscription_resumed/paused are emitted separately and also carry status.
 const LS_HANDLED_EVENTS = new Set([
   "subscription_created",
   "subscription_updated",
   "subscription_cancelled",
   "subscription_expired",
+  "subscription_resumed",
+  "subscription_paused",
+  "subscription_unpaused",
 ]);
 
 // Constant-time HMAC-SHA256 verify. Parses hex defensively — rejects malformed signatures cleanly.
@@ -301,17 +307,20 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   // Map LS status to our enum. Only explicit cancellation events reach here (gated above).
   const statusMap: Record<string, string> = {
     active: "active",
+    on_trial: "active",   // LS test mode sends this for new subscriptions
+    trialing: "active",
     past_due: "past_due",
+    unpaid: "past_due",
+    paused: "past_due",
     cancelled: "cancelled",
     expired: "cancelled",
-    unpaid: "past_due",
   };
+  // subscription_updated can carry any status; default conservatively to cancelled.
   const status = statusMap[attrs.status ?? ""] ?? "cancelled";
 
-  const plans = await sbGet<{ id: string }>(env, "plans", "name=eq.pro&select=id&limit=1").catch(() => []);
-  const proPlanId = plans[0]?.id;
-  const freePlans = await sbGet<{ id: string }>(env, "plans", "name=eq.free&select=id&limit=1").catch(() => []);
-  const freePlanId = freePlans[0]?.id;
+  const allPlans = await sbGet<{ id: string; name: string }>(env, "plans", "name=in.(pro,free)&select=id,name&limit=2").catch(() => []);
+  const proPlanId = allPlans.find((p) => p.name === "pro")?.id;
+  const freePlanId = allPlans.find((p) => p.name === "free")?.id;
 
   if (!proPlanId || !freePlanId) {
     console.error("[fuseguard:webhook] plans not found in DB");
