@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+      # NOTE: npm cache re-enabled in Phase 1 once package-lock.json exists.
 
       # Skip gracefully until package.json exists (pre-MVP scaffolding phase)
       - name: Check for package.json
