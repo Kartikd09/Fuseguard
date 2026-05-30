@@ -1,0 +1,7 @@
+# Default owner for everything — all PRs require founder review
+* @Kartikd09
+
+# Security-critical paths get extra scrutiny
+/.github/        @Kartikd09
+/SECURITY.md     @Kartikd09
+/.gitleaks.toml  @Kartikd09
