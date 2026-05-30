@@ -129,6 +129,7 @@ async function buildEnv(opts: TestEnvOptions = {}): Promise<{
         orgId: "org-1",
         anthropicKey: "sk-ant-real",
         limitUsd,
+        hasBudget: true,
         keyDO,
         sessionDO: null,
       };
@@ -139,6 +140,36 @@ async function buildEnv(opts: TestEnvOptions = {}): Promise<{
 
   return { env, keyDO };
 }
+
+// ── C3: no budget configured ────────────────────────────────────────────────────────────────
+describe("No budget configured (C3 — never unlimited)", () => {
+  it("fail-closed: blocks with 402 no_budget and makes no upstream call", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch, failureMode: "closed" });
+    env.lookupKey = async () => ({
+      orgId: "org-1", anthropicKey: "sk-ant-real", limitUsd: 0, hasBudget: false,
+      keyDO: (await buildEnv({ limitUsd: 0 })).keyDO, sessionDO: null,
+    });
+    const handler = createProxyHandler();
+    const res = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+    expect(res.status).toBe(402);
+    expect((await res.json() as { error: { type: string } }).error.type).toBe("no_budget");
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("fail-open: forwards unmetered when no budget and FAILURE_MODE=open", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch, failureMode: "open" });
+    env.lookupKey = async () => ({
+      orgId: "org-1", anthropicKey: "sk-ant-real", limitUsd: 0, hasBudget: false,
+      keyDO: (await buildEnv({ limitUsd: 0 })).keyDO, sessionDO: null,
+    });
+    const handler = createProxyHandler();
+    const res = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+    expect(res.status).toBe(200);
+    expect(upstreamFetch).toHaveBeenCalledOnce();
+  });
+});
 
 // ── Task 6: Hard kill — 402 budget_exceeded ────────────────────────────────────────────────────
 describe("Hard kill — per-key budget (FR-3, Task 6)", () => {
@@ -214,6 +245,7 @@ describe("Per-session budget (FR-2/FR-3, Task 7)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 10,
+      hasBudget: true,
       keyDO,
       sessionDO, // exhausted
     });
@@ -245,6 +277,7 @@ describe("Per-session budget (FR-2/FR-3, Task 7)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 100,
+      hasBudget: true,
       keyDO,
       sessionDO,
     });
@@ -275,6 +308,7 @@ describe("Post-flight reconciliation (Task 9)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 10,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });
@@ -372,6 +406,7 @@ describe("Streaming (stream:true, Task 10)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 10,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });
@@ -486,6 +521,7 @@ describe("Fail-closed / fail-open (Task 12)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 10,
+      hasBudget: true,
       keyDO: throwingDO,
       sessionDO: null,
     });
@@ -602,6 +638,7 @@ describe("Stream disconnect — worst-case reservation (Finding #3)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 100,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });
@@ -656,6 +693,7 @@ describe("Stream disconnect — worst-case reservation (Finding #3)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 100,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });
@@ -814,6 +852,7 @@ describe("Integration: end-to-end proxy flow", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 10,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });
@@ -863,6 +902,7 @@ describe("Loop detection in Worker (Task 11)", () => {
       orgId: "org-1",
       anthropicKey: "sk-ant-real",
       limitUsd: 1000,
+      hasBudget: true,
       keyDO,
       sessionDO: null,
     });

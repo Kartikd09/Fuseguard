@@ -162,7 +162,12 @@ async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupR
   const keyBudget =
     budgets.find((b) => b.scope === "key" && b.scope_ref === row.id) ??
     budgets.find((b) => b.scope === "key" && b.scope_ref === null);
-  const limitUsd = keyBudget?.limit_value ?? Infinity;
+
+  // C3 FIX: no budget configured must NOT mean unlimited spend (Infinity). That defeats the
+  // product. A key with no budget has hasBudget=false; the proxy then applies FAILURE_MODE:
+  //   closed → block (402 no_budget), open → forward unmetered (self-host opt-in).
+  const hasBudget = keyBudget != null;
+  const limitUsd = keyBudget?.limit_value ?? 0;
 
   const keyDO = getDO(env.BudgetDO, `budget:key:${row.id}`);
 
@@ -173,7 +178,7 @@ async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupR
     headers: { "content-type": "application/json" },
   }));
 
-  return { orgId: row.org_id, anthropicKey, limitUsd, keyDO, sessionDO: null, keyId: row.id };
+  return { orgId: row.org_id, anthropicKey, limitUsd, hasBudget, keyDO, sessionDO: null, keyId: row.id };
 }
 
 async function lookupKey(keyHash: string, env: Env): Promise<LookupResult | null> {
@@ -182,8 +187,8 @@ async function lookupKey(keyHash: string, env: Env): Promise<LookupResult | null
   }
   const resolved = resolveSelfhostKey(keyHash, env);
   if (resolved === null) return null;
-  // Self-host has no DB key id — use hash prefix as a stable identifier.
-  return { ...resolved, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null, keyId: keyHash.slice(0, 36) };
+  // Self-host always has a budget (SELFHOST_BUDGET_USD validated in resolveSelfhostKey).
+  return { ...resolved, hasBudget: true, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null, keyId: keyHash.slice(0, 36) };
 }
 
 // ── Event emitter → Supabase usage_events + blocks (off hot path) ────────────────────────────

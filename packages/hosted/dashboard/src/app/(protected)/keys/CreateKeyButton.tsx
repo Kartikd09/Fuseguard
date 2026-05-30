@@ -22,6 +22,7 @@ import { Plus, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 interface CreateKeyButtonProps {
   keyCount: number;
+  maxKeys: number; // -1 = unlimited (Pro)
 }
 
 type ModalState = "closed" | "form" | "created";
@@ -31,7 +32,7 @@ interface CreatedKey {
   fuseGuardKey: string;
 }
 
-export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
+export default function CreateKeyButton({ keyCount, maxKeys }: CreateKeyButtonProps) {
   const [modalState, setModalState] = useState<ModalState>("closed");
   const [label, setLabel] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -40,7 +41,8 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
   const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const router = useRouter();
 
-  const isAtFreeLimit = keyCount >= 1;
+  // -1 = unlimited (Pro). Otherwise at-limit when count reaches the plan ceiling.
+  const isAtKeyLimit = maxKeys !== -1 && keyCount >= maxKeys;
 
   function openModal() {
     setModalState("form");
@@ -102,14 +104,14 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
         type="button"
         onClick={openModal}
         title={
-          isAtFreeLimit
+          isAtKeyLimit
             ? "Free tier allows 1 key. Upgrade to Pro for unlimited."
             : "Create a new API key"
         }
       >
         <Plus className="h-4 w-4" />
         Create key
-        {isAtFreeLimit && (
+        {isAtKeyLimit && (
           <Badge variant="warning" className="ml-1">Pro</Badge>
         )}
       </Button>
@@ -124,7 +126,7 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
             </DialogDescription>
           </DialogHeader>
 
-          {isAtFreeLimit && (
+          {isAtKeyLimit && (
             <div className="rounded-lg border border-yellow-700/50 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-400 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <span>
