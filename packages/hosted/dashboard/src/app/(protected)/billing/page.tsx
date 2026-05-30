@@ -46,7 +46,9 @@ export default async function BillingPage() {
     ? `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[custom][org_id]=${encodeURIComponent(orgId)}`
     : LEMON_SQUEEZY_CHECKOUT_URL;
 
-  const isPro = subscription?.status === "active";
+  // Pro = active subscription on the pro plan (not just any active subscription).
+  const isPro = subscription?.status === "active" &&
+    (subscription as unknown as { plans?: { name: string } })?.plans?.name === "pro";
   const renewsAt = subscription?.renews_at
     ? new Intl.DateTimeFormat("en-US", {
         month: "long",
