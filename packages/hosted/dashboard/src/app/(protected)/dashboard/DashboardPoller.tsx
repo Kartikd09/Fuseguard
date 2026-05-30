@@ -30,7 +30,7 @@ export default function DashboardPoller() {
         "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isLive
-          ? "border-emerald-700/50 bg-emerald-950/30 text-emerald-400 hover:bg-emerald-950/50"
+          ? "border-emerald-600/60 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-950/50"
           : "border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground"
       )}
       aria-label={isLive ? "Live updates on — click to pause" : "Live updates paused — click to resume"}
@@ -38,7 +38,7 @@ export default function DashboardPoller() {
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full",
-          isLive ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"
+          isLive ? "bg-emerald-600 dark:bg-emerald-400 animate-pulse" : "bg-muted-foreground"
         )}
         aria-hidden="true"
       />

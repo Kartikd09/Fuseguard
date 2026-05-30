@@ -71,24 +71,24 @@ export default async function DashboardPage() {
       {hasFirstBlock && (
         <div
           role="status"
-          className="rounded-xl border border-emerald-700/50 bg-emerald-950/30 dark:bg-emerald-900/10 px-5 py-4 flex items-start gap-3"
+          className="rounded-xl border border-emerald-600/40 bg-emerald-50 dark:bg-emerald-950/30 px-5 py-4 flex items-start gap-3"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
-            <ShieldOff className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+            <ShieldOff className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </div>
           <div>
-            <p className="font-semibold text-emerald-300">
+            <p className="font-semibold text-emerald-800 dark:text-emerald-300">
               FuseGuard just earned its keep
               {savedUsd > 0 && (
-                <span className="ml-2 text-emerald-400/90 font-normal">
+                <span className="ml-2 text-emerald-700 dark:text-emerald-400/90 font-normal">
                   — saved ~{formatUsd(savedUsd)}
                 </span>
               )}
             </p>
-            <p className="text-sm text-emerald-400/70 mt-0.5">
+            <p className="text-sm text-emerald-700/80 dark:text-emerald-400/70 mt-0.5">
               {blocks.length} call{blocks.length !== 1 ? "s" : ""} blocked before breaching your
               budget.{" "}
-              <strong className="font-medium text-emerald-300/80">That&apos;s the whole product.</strong>
+              <strong className="font-medium text-emerald-700 dark:text-emerald-300/80">That&apos;s the whole product.</strong>
             </p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default async function DashboardPage() {
                       {formatUsd(ts.spentUsd)}
                     </span>
                   </div>
-                  <BudgetBar percent={ts.percentOfTotal} label="% of total" />
+                  <BudgetBar percent={ts.percentOfTotal} label="share of total spend" />
                 </div>
               ))}
             </CardContent>
