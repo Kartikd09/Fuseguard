@@ -19,8 +19,13 @@ export const PRICING: Record<string, ModelPrice> = {
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
 
 // Unknown model ⇒ fail-closed: price as the most-expensive known model (ARCHITECTURE §3).
+// Throws if the table is empty — returning 0 would silently un-fail-closed (charge nothing).
 function mostExpensive(kind: PriceKind): number {
-  return Object.values(PRICING).reduce((max, price) => Math.max(max, price[kind]), 0);
+  const prices = Object.values(PRICING);
+  if (prices.length === 0) {
+    throw new Error("PRICING table is empty — cannot apply fail-closed fallback rate");
+  }
+  return prices.reduce((max, price) => Math.max(max, price[kind]), 0);
 }
 
 /**

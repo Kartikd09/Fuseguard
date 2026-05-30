@@ -3,6 +3,8 @@ name: security-reviewer
 description: Security and compliance reviewer for FuseGuard. MUST review any change touching auth, API keys, the proxy request path, billing, or data handling. Use before merging security-sensitive PRs.
 tools: Read, Grep, Glob, Bash
 model: opus
+memory: project
+color: red
 ---
 
 # Security Reviewer — FuseGuard

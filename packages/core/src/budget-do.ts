@@ -2,9 +2,11 @@
 // MIT/OSS (ARCHITECTURE §2, §7). One DO instance per budget scope serializes all access,
 // so read-decide-reserve is atomic by construction — no races (ARCHITECTURE §4c).
 
+export type FailureMode = "open" | "closed";
+
 export interface Env {
   readonly ANTHROPIC_UPSTREAM: string;
-  readonly FAILURE_MODE: string;
+  readonly FAILURE_MODE: FailureMode;
 }
 
 export class BudgetDO {

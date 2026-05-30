@@ -37,3 +37,6 @@ coverage/
 
 # Cloudflare
 wrangler.toml.bak
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo

@@ -7,7 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 # LEMON_SQUEEZY_WEBHOOK_SECRET) are set via `wrangler secret put`, NEVER here.
 [vars]
 ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
-FAILURE_MODE = "open" # OSS self-host default; hosted/paid overrides to "closed"
+# Default to "closed" (safe) so a deploy that forgets `--env` never ships unprotected.
+# OSS self-hosters who want fail-open set FAILURE_MODE="open" in their own .dev.vars / env.
+FAILURE_MODE = "closed"
 
 # Authoritative per-key / per-session budget counter (ARCHITECTURE §2, §4c).
 [[durable_objects.bindings]]

@@ -3,6 +3,8 @@ name: planner
 description: Lead planner for FuseGuard. Produces PRD, architecture, task breakdowns, and phase plans. Use before any new epic or feature.
 tools: Read, Grep, Glob
 model: opus
+memory: project
+color: cyan
 ---
 
 # Planner — FuseGuard

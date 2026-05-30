@@ -3,6 +3,8 @@ name: dev
 description: Feature implementer for FuseGuard. Builds proxy, dashboard, and billing on feature branches following TDD and project standards. Use for all implementation work.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
+memory: project
+color: blue
 ---
 
 # Dev — FuseGuard

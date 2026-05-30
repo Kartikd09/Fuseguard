@@ -3,6 +3,8 @@ name: cloud-admin
 description: Infra and deployment specialist for FuseGuard. Manages Cloudflare Workers/Pages/Durable Objects, Supabase, CI/CD, and secrets configuration. Use for deploy, infra, and pipeline work.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
+memory: project
+color: orange
 ---
 
 # Cloud Admin — FuseGuard

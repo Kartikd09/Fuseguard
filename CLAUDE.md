@@ -10,6 +10,9 @@ The circuit breaker for AI agents. A drop-in proxy between an app and the LLM pr
 
 See `docs/PRD.md` for the full product spec and `docs/ARCHITECTURE.md` for system design.
 
+For a fast architecture digest (read this instead of re-scanning the repo):
+@.claude/CODEMAP.md
+
 ## Golden Rules (NON-NEGOTIABLE)
 
 1. **NEVER commit directly to `main` or `develop`.** All work happens on `feat/*`, `fix/*`,
