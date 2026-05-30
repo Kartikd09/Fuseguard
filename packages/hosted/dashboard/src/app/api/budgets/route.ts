@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 import { resolveActiveOrgId } from "@/lib/data/queries";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
@@ -44,12 +44,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit: 20 budget writes per minute per user.
-  const rl = rateLimit(`budgets:${user.id}`, 20, 60_000);
-  if (!rl.allowed) {
+  // Rate limit: 20 budget writes per minute per user (DB-backed, edge-safe).
+  const allowed = await checkRateLimit(supabase, `budgets:${user.id}`, 20, 60);
+  if (!allowed) {
     return NextResponse.json(
       { error: "Too many requests. Try again shortly." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      { status: 429, headers: { "Retry-After": "60" } }
     );
   }
 

@@ -32,7 +32,10 @@ const nextConfig: NextConfig = {
                 : "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data:",
-              "connect-src 'self' https://*.supabase.co ws://localhost:3000",
+              // dev needs the HMR websocket; strip it in production
+              process.env.NODE_ENV === "development"
+                ? "connect-src 'self' https://*.supabase.co ws://localhost:3000"
+                : "connect-src 'self' https://*.supabase.co",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

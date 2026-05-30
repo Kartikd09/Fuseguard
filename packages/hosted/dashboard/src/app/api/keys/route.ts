@@ -7,7 +7,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateFuseGuardKey, hashKey } from "@/lib/crypto/keys";
 import { encryptSecret } from "@/lib/crypto/encrypt";
 import { resolveActiveOrgId } from "@/lib/data/queries";
-import { rateLimit } from "@/lib/rate-limit";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "edge";
 
@@ -35,12 +35,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit: 10 key creations per minute per user.
-  const rl = rateLimit(`keys:${user.id}`, 10, 60_000);
-  if (!rl.allowed) {
+  // Rate limit: 10 key creations per minute per user (DB-backed, edge-safe).
+  const allowed = await checkRateLimit(supabase, `keys:${user.id}`, 10, 60);
+  if (!allowed) {
     return NextResponse.json(
       { error: "Too many requests. Try again shortly." },
-      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+      { status: 429, headers: { "Retry-After": "60" } }
     );
   }
 

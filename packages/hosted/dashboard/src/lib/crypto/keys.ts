@@ -1,28 +1,34 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // FuseGuard API key generation + hashing helpers.
-// Designed for use in Next.js Route Handlers (Node.js crypto available via Web Crypto API).
+// Edge-runtime safe — uses Web Crypto + Web-standard encoding (no Node Buffer).
 
 const FG_KEY_PREFIX = "fg_live_";
-const KEY_BYTES = 24; // 192 bits → 32-char base64url
+const KEY_BYTES = 24; // 192 bits
 
-/**
- * Generate a cryptographically random FuseGuard API key.
- * Format: fg_live_<24-byte random base64url>
- * Shown once at creation; stored only as a SHA-256 hash.
- */
-export function generateFuseGuardKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(KEY_BYTES));
-  const b64 = Buffer.from(bytes).toString("base64url");
-  return `${FG_KEY_PREFIX}${b64}`;
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function toHex(bytes: Uint8Array): string {
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return hex;
 }
 
 /**
- * SHA-256 hash of a FuseGuard key for safe storage.
- * Used as the lookup key — never the plaintext.
+ * Generate a cryptographically random FuseGuard API key.
+ * Format: fg_live_<24-byte random base64url>. Shown once; stored only as a SHA-256 hash.
  */
+export function generateFuseGuardKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(KEY_BYTES));
+  return `${FG_KEY_PREFIX}${toBase64Url(bytes)}`;
+}
+
+/** SHA-256 hash of a FuseGuard key for safe storage. Lookup key — never the plaintext. */
 export async function hashKey(key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
+  const data = new TextEncoder().encode(key);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return Buffer.from(hashBuffer).toString("hex");
+  return toHex(new Uint8Array(hashBuffer));
 }

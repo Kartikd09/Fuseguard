@@ -6,16 +6,17 @@
 const ALGO = "AES-GCM";
 const IV_BYTES = 12;
 
-// Return a fresh ArrayBuffer-backed Uint8Array (avoids SharedArrayBuffer typing issues
-// with Web Crypto under TS strict).
+// Web-standard base64 (atob/btoa) — works on the edge runtime without Node Buffer.
 function fromBase64(b64: string): Uint8Array {
-  const buf = Buffer.from(b64, "base64");
-  const out = new Uint8Array(buf.byteLength);
-  out.set(buf);
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
 }
 function toBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
 }
 // Copy into a guaranteed ArrayBuffer (not SharedArrayBuffer) for Web Crypto under TS strict.
 function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {

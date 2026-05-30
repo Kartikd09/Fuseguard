@@ -1,54 +1,31 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
-// Lightweight per-key fixed-window rate limiter for API routes.
+// Edge-safe rate limiting via a Postgres atomic counter (check_rate_limit RPC).
 //
-// MVP: in-memory map (per server instance). Good enough for abuse protection at launch
-// scale. Post-launch / multi-instance: swap the Map for Upstash Redis or a Supabase
-// counter — only this file changes.
+// An in-memory Map does NOT work on Cloudflare Pages — requests hit different short-lived
+// isolates with no shared memory, so the counter never accumulates. This delegates to a
+// DB-side fixed-window counter that is correct across all isolates.
 
-interface Window {
-  count: number;
-  resetAt: number;
-}
-
-const buckets = new Map<string, Window>();
-let lastSweep = 0;
-const SWEEP_INTERVAL_MS = 60_000;
-
-// Evict expired buckets at most once per minute (not on every call) so the map doesn't
-// grow unbounded without making every request pay an O(n) scan.
-function sweep(now: number): void {
-  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
-  lastSweep = now;
-  for (const [key, w] of buckets) {
-    if (w.resetAt < now) buckets.delete(key);
-  }
-}
-
-export interface RateLimitResult {
-  allowed: boolean;
-  remaining: number;
-  resetAt: number;
-}
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Fixed-window rate limit. Returns allowed=false once `limit` requests are seen
- * within `windowMs` for the given `key` (e.g. user id or IP).
+ * Returns true if the request is allowed, false if the limit is exceeded.
+ * Fail-open: if the DB call errors, allow the request (don't block legitimate users
+ * on a transient DB hiccup — rate limiting is abuse protection, not a security gate).
  */
-export function rateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
-  const now = Date.now();
-  sweep(now);
-
-  const existing = buckets.get(key);
-  if (!existing || existing.resetAt < now) {
-    const resetAt = now + windowMs;
-    buckets.set(key, { count: 1, resetAt });
-    return { allowed: true, remaining: limit - 1, resetAt };
+export async function checkRateLimit(
+  supabase: SupabaseClient,
+  key: string,
+  limit: number,
+  windowSeconds: number
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("check_rate_limit", {
+    p_key: key,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+  if (error) {
+    console.error("[rate-limit] check failed (failing open):", error.message);
+    return true;
   }
-
-  if (existing.count >= limit) {
-    return { allowed: false, remaining: 0, resetAt: existing.resetAt };
-  }
-
-  existing.count += 1;
-  return { allowed: true, remaining: limit - existing.count, resetAt: existing.resetAt };
+  return data === true;
 }
