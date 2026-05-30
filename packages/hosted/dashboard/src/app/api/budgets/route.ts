@@ -62,17 +62,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: org, error: orgError } = await supabase
-    .from("orgs")
-    .select("id")
-    .single();
+  const { data: membership, error: orgError } = await supabase
+    .from("memberships")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
 
-  if (orgError || !org) {
-    return NextResponse.json({ error: "No org found for user" }, { status: 404 });
+  if (orgError || !membership) {
+    return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
 
   const { error: insertError } = await supabase.from("budgets").insert({
-    org_id: (org as { id: string }).id,
+    org_id: (membership as { org_id: string }).org_id,
     scope: body.scope,
     scope_ref: body.scope_ref,
     limit_type: body.limit_type,
@@ -83,10 +85,8 @@ export async function POST(request: Request) {
   });
 
   if (insertError) {
-    return NextResponse.json(
-      { error: "Failed to create budget: " + insertError.message },
-      { status: 500 }
-    );
+    console.error("[budgets] insert failed:", insertError);
+    return NextResponse.json({ error: "Failed to create budget" }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true }, { status: 201 });

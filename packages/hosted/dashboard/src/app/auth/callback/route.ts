@@ -3,10 +3,17 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+// Only allow internal, single-slash paths — blocks open-redirect (//evil.com, /\evil.com,
+// absolute URLs). Anything else falls back to /dashboard.
+function safeNext(raw: string | null): string {
+  if (!raw || !/^\/(?!\/)(?!\\)/.test(raw)) return "/dashboard";
+  return raw;
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  const next = safeNext(searchParams.get("next"));
 
   if (!code) {
     // No code param — redirect to login with an error hint

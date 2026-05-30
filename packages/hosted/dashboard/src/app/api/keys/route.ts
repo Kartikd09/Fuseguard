@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateFuseGuardKey, hashKey } from "@/lib/crypto/keys";
+import { encryptSecret } from "@/lib/crypto/encrypt";
 
 interface CreateKeyBody {
   label: string;
@@ -55,30 +56,45 @@ export async function POST(request: Request) {
     );
   }
 
+  // Fail closed: real AES-256-GCM encryption is mandatory. No master key → refuse
+  // (never store the customer key in plaintext or a placeholder).
+  const masterKey = process.env.FG_MASTER_KEY;
+  if (!masterKey) {
+    console.error("[keys] FG_MASTER_KEY not configured — refusing to store key");
+    return NextResponse.json({ error: "Key storage is not configured" }, { status: 503 });
+  }
+
   // Generate the FuseGuard key (shown once) and hash for storage
   const fuseGuardKey = generateFuseGuardKey();
   const fuseGuardKeyHash = await hashKey(fuseGuardKey);
-  const keyPrefix = fuseGuardKey.slice(0, 9); // e.g. "fg_live_x"
+  const keyPrefix = fuseGuardKey.slice(0, 9);
 
-  // In production: encrypt anthropicKey with AES-256-GCM using FG_MASTER_KEY wrangler secret.
-  // For the dashboard MVP (reads/UI only), we store a placeholder ciphertext — the actual
-  // encryption happens in the Worker when the key is first used.
-  // This is documented as "requires Worker wiring" in Phase 3.
-  const anthropicKeyCiphertext = Buffer.from("encrypted:" + anthropicKey.slice(0, 4) + "…").toString("base64");
-  const anthropicKeyIv = Buffer.from(crypto.getRandomValues(new Uint8Array(12))).toString("base64");
+  // Real AES-256-GCM encryption of the customer's Anthropic key (server-only master key).
+  let anthropicKeyCiphertext: string;
+  let anthropicKeyIv: string;
+  try {
+    const enc = await encryptSecret(anthropicKey, masterKey);
+    anthropicKeyCiphertext = enc.ciphertext;
+    anthropicKeyIv = enc.iv;
+  } catch (err) {
+    console.error("[keys] encryption failed:", err);
+    return NextResponse.json({ error: "Key storage is not configured" }, { status: 503 });
+  }
 
-  // Fetch org for this user (RLS-scoped)
-  const { data: org, error: orgError } = await supabase
-    .from("orgs")
-    .select("id")
-    .single();
+  // Derive org explicitly from the caller's membership (no implicit single-row trust).
+  const { data: membership, error: orgError } = await supabase
+    .from("memberships")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
 
-  if (orgError || !org) {
-    return NextResponse.json({ error: "No org found for user" }, { status: 404 });
+  if (orgError || !membership) {
+    return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
 
   const { error: insertError } = await supabase.from("api_keys").insert({
-    org_id: (org as { id: string }).id,
+    org_id: (membership as { org_id: string }).org_id,
     label: label.trim(),
     fuseguard_key_hash: fuseGuardKeyHash,
     fuseguard_key_prefix: keyPrefix,
@@ -89,10 +105,8 @@ export async function POST(request: Request) {
   });
 
   if (insertError) {
-    return NextResponse.json(
-      { error: "Failed to create key: " + insertError.message },
-      { status: 500 }
-    );
+    console.error("[keys] insert failed:", insertError);
+    return NextResponse.json({ error: "Failed to create key" }, { status: 500 });
   }
 
   // Return the FuseGuard key once — never stored in plaintext, never returned again
