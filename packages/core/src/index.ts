@@ -18,6 +18,11 @@ export interface Env {
   readonly FG_MASTER_KEY?: string;
   readonly SUPABASE_SERVICE_ROLE_KEY?: string;
   readonly SUPABASE_URL?: string;
+  // Phase 1 single-tenant self-host config (one key, one budget). Set via wrangler secrets.
+  // Hosted/multi-tenant DB lookup arrives in Phase 2.
+  readonly SELFHOST_FUSEGUARD_KEY_HASH?: string; // SHA-256 hex of the allowed FuseGuard key
+  readonly SELFHOST_ANTHROPIC_KEY?: string; // the upstream Anthropic key to use
+  readonly SELFHOST_BUDGET_USD?: string; // numeric budget ceiling in USD
 }
 
 const proxyHandler = createProxyHandler();
@@ -37,24 +42,36 @@ function emitEvent(event: unknown): void {
   void event;
 }
 
-async function lookupKey(
-  keyHash: string,
-  env: Env
-): Promise<KeyLookupResult | null> {
-  // Phase 1 stub: load from DO storage keyed by hash.
-  // Phase 2 wires a real Supabase lookup via SUPABASE_SERVICE_ROLE_KEY.
-  // For now we use the DO itself — the key DO for "budget:key:<hash>" holds the budget state.
-  // This means Phase 1 self-host works without a database; the budget limit defaults to Infinity.
-  const keyDO = getDO(env.BudgetDO, `budget:key:${keyHash}`);
+// Pure, testable resolution of the Phase-1 self-host config. Returns the validated
+// {anthropicKey, limitUsd} only when fully configured AND the presented key matches.
+// FAIL CLOSED on anything missing/invalid → null. No Infinity, no empty-key forward.
+// TODO(Phase 2): replace with Supabase api_keys lookup + AES-GCM decrypt (FG_MASTER_KEY),
+// per-org budgets, and session DO resolution.
+export interface SelfhostConfig {
+  readonly SELFHOST_FUSEGUARD_KEY_HASH?: string;
+  readonly SELFHOST_ANTHROPIC_KEY?: string;
+  readonly SELFHOST_BUDGET_USD?: string;
+}
 
-  // Self-host: every key is valid; budget is managed purely by the DO counter.
-  // The hosted dashboard (Phase 2) will gate on DB records and tier limits.
+export function resolveSelfhostKey(
+  keyHash: string,
+  cfg: SelfhostConfig
+): { orgId: string; anthropicKey: string; limitUsd: number } | null {
+  const { SELFHOST_FUSEGUARD_KEY_HASH: hash, SELFHOST_ANTHROPIC_KEY: anthropicKey, SELFHOST_BUDGET_USD: budgetRaw } = cfg;
+  if (!hash || !anthropicKey || !budgetRaw) return null; // not configured → block
+  if (keyHash !== hash) return null; // unknown key → block
+  const limitUsd = Number(budgetRaw);
+  if (!Number.isFinite(limitUsd) || limitUsd <= 0) return null; // bad budget → block
+  return { orgId: keyHash.slice(0, 16), anthropicKey, limitUsd };
+}
+
+async function lookupKey(keyHash: string, env: Env): Promise<KeyLookupResult | null> {
+  const resolved = resolveSelfhostKey(keyHash, env);
+  if (resolved === null) return null;
   return {
-    orgId: keyHash.slice(0, 16), // use first 16 chars of hash as org placeholder
-    anthropicKey: "", // Phase 2: decrypt from DB; Phase 1: key forwarding happens via x-api-key passthrough
-    limitUsd: Infinity, // Phase 2: pull from budgets table
-    keyDO,
-    sessionDO: null, // Phase 2: look up from session header
+    ...resolved,
+    keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`),
+    sessionDO: null, // Phase 2: resolve from validated session header
   };
 }
 

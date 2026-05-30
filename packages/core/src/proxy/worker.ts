@@ -154,12 +154,13 @@ async function doCallWithPolicy<T>(
     return { ok: true, value };
   } catch (err) {
     emitEvent({ type: "do_error", error: String(err) });
-    if (failureMode === "closed") {
-      return { ok: false, response: err402("enforcement_unavailable", "Budget enforcement is temporarily unavailable") };
-    }
-    // fail-open: signal that the DO call failed but we should continue without enforcement.
-    // The caller handles this by returning a specific sentinel.
-    return { ok: false, response: err402("enforcement_unavailable", "Budget enforcement temporarily unavailable (fail-open)") };
+    // Deliberate policy: a MID-REQUEST DO error always blocks (returns 402), in BOTH modes.
+    // Rationale: forwarding without a reservation here would reintroduce the exact overspend
+    // bypass FuseGuard exists to prevent. FAILURE_MODE=open only governs the pre-flight
+    // lookup boundary (where no spend has happened yet) — see the lookup path in handleProxy.
+    // So mid-pipeline we fail closed regardless of mode. (Verified by tests for both modes.)
+    void failureMode;
+    return { ok: false, response: err402("enforcement_unavailable", "Budget enforcement is temporarily unavailable") };
   }
 }
 
@@ -595,9 +596,15 @@ export function createProxyHandler() {
 
     const actualCost = cost(validBody.model, actualInputTokens, actualOutputTokens, actualCacheReadTokens, actualCacheWriteTokens);
 
-    await reconcile(keyDO, keyReservationId, actualCost);
-    if (sessionDO != null && sessionReservationId != null) {
-      await reconcile(sessionDO, sessionReservationId, actualCost);
+    // Reconcile must never turn a post-forward DO error into a lost response: the client
+    // already incurred upstream spend. Surface the error via emitEvent and still return the body.
+    try {
+      await reconcile(keyDO, keyReservationId, actualCost);
+      if (sessionDO != null && sessionReservationId != null) {
+        await reconcile(sessionDO, sessionReservationId, actualCost);
+      }
+    } catch (err) {
+      env.emitEvent({ type: "reconcile_error", scope: "non_stream", error: String(err) });
     }
 
     // Emit usage event async (best-effort, never blocks the response).
