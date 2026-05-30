@@ -54,14 +54,14 @@ async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
 }
 
 async function sbUpsert(env: Env, table: string, onConflict: string, body: unknown): Promise<void> {
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}`, {
+  // on_conflict must be a query param, not a header (PostgREST spec).
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
     method: "POST",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
-      Prefer: `resolution=merge-duplicates,return=minimal`,
-      "on-conflict": onConflict,
+      Prefer: "resolution=merge-duplicates,return=minimal",
     },
     body: JSON.stringify(body),
   });
@@ -223,11 +223,21 @@ function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void 
 
 // ── Lemon Squeezy webhook handler ────────────────────────────────────────────────────────────
 
-// Constant-time HMAC-SHA256 verify to prevent timing attacks.
+// Events we act on — ignore all others to prevent accidental downgrades on unrelated events.
+const LS_HANDLED_EVENTS = new Set([
+  "subscription_created",
+  "subscription_updated",
+  "subscription_cancelled",
+  "subscription_expired",
+]);
+
+// Constant-time HMAC-SHA256 verify. Parses hex defensively — rejects malformed signatures cleanly.
 async function verifyLsSignature(body: string, signature: string, secret: string): Promise<boolean> {
+  // Reject empty or non-hex signatures before touching crypto — avoids NaN/exception paths.
+  if (!/^[0-9a-f]{1,}$/i.test(signature) || signature.length % 2 !== 0) return false;
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const sigBytes = new Uint8Array(signature.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const sigBytes = new Uint8Array((signature.match(/.{2}/g) ?? []).map((b) => parseInt(b, 16)));
   return crypto.subtle.verify("HMAC", key, sigBytes, enc.encode(body));
 }
 
@@ -265,17 +275,30 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   }
 
   const eventName = payload.meta?.event_name ?? "";
+
+  // Ignore unrelated events — prevents accidental plan downgrades from payment/other events.
+  if (!LS_HANDLED_EVENTS.has(eventName)) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
   const orgId = payload.meta?.custom_data?.org_id;
   const attrs = payload.data?.attributes;
   const lsSubId = payload.data?.id;
 
   if (!orgId || !attrs || !lsSubId) {
-    // Missing custom_data.org_id — can't attribute to an org. Log and ack.
     console.warn("[fuseguard:webhook] missing org_id in custom_data", eventName);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
 
-  // Map LS status to our status enum.
+  // HIGH: verify org_id exists in DB — custom_data is set via public checkout URL query param
+  // so a signed-but-attacker-influenced org_id is possible. Reject unknown orgs.
+  const orgRows = await sbGet<{ id: string }>(env, "orgs", `id=eq.${encodeURIComponent(orgId)}&select=id&limit=1`).catch(() => []);
+  if (orgRows.length === 0) {
+    console.warn("[fuseguard:webhook] org_id not found in DB", orgId, eventName);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
+  // Map LS status to our enum. Only explicit cancellation events reach here (gated above).
   const statusMap: Record<string, string> = {
     active: "active",
     past_due: "past_due",
@@ -285,8 +308,7 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   };
   const status = statusMap[attrs.status ?? ""] ?? "cancelled";
 
-  // Get pro plan id.
-  const plans = await sbGet<{ id: string; name: string }>(env, "plans", "name=eq.pro&select=id,name&limit=1").catch(() => []);
+  const plans = await sbGet<{ id: string }>(env, "plans", "name=eq.pro&select=id&limit=1").catch(() => []);
   const proPlanId = plans[0]?.id;
   const freePlans = await sbGet<{ id: string }>(env, "plans", "name=eq.free&select=id&limit=1").catch(() => []);
   const freePlanId = freePlans[0]?.id;
@@ -298,7 +320,7 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
 
   const planId = status === "active" ? proPlanId : freePlanId;
 
-  // Upsert subscription row (idempotent — LS may replay events).
+  // Upsert subscription — idempotent on org_id (LS may replay).
   await sbUpsert(env, "subscriptions", "org_id", {
     org_id: orgId,
     lemon_squeezy_subscription_id: lsSubId,
@@ -310,8 +332,8 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     updated_at: new Date().toISOString(),
   });
 
-  // Sync org plan_id to match subscription.
-  await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${orgId}`, {
+  // Sync org plan_id.
+  await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${encodeURIComponent(orgId)}`, {
     method: "PATCH",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,

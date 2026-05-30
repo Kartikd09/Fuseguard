@@ -134,6 +134,13 @@ export async function POST(request: Request) {
   });
 
   if (insertError) {
+    // DB trigger fires when plan key limit is exceeded — surface as upgrade prompt.
+    if (insertError.message?.includes("key_limit_exceeded")) {
+      return NextResponse.json(
+        { error: "Free tier allows 1 API key. Upgrade to Pro for unlimited keys.", upgrade: true },
+        { status: 403 }
+      );
+    }
     console.error("[keys] insert failed:", insertError);
     return NextResponse.json({ error: "Failed to create key" }, { status: 500 });
   }
