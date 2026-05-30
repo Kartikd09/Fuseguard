@@ -332,8 +332,8 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     updated_at: new Date().toISOString(),
   });
 
-  // Sync org plan_id.
-  await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${encodeURIComponent(orgId)}`, {
+  // Sync org plan_id — log on failure so stale plan_id is observable.
+  const patchRes = await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${encodeURIComponent(orgId)}`, {
     method: "PATCH",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -343,6 +343,9 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     },
     body: JSON.stringify({ plan_id: planId }),
   });
+  if (!patchRes.ok) {
+    console.error(`[fuseguard:webhook] org plan_id sync failed: ${patchRes.status} org=${orgId}`);
+  }
 
   console.log(`[fuseguard:webhook] ${eventName} org=${orgId} status=${status}`);
   return new Response(JSON.stringify({ ok: true }), { status: 200 });

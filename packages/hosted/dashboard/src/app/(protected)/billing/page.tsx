@@ -43,7 +43,7 @@ export default async function BillingPage() {
     .from("memberships").select("org_id").eq("user_id", user?.id ?? "").limit(1).maybeSingle();
   const orgId = (membership as { org_id: string } | null)?.org_id ?? "";
   const checkoutUrl = orgId
-    ? `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[custom][org_id]=${orgId}`
+    ? `${LEMON_SQUEEZY_CHECKOUT_URL}?checkout[custom][org_id]=${encodeURIComponent(orgId)}`
     : LEMON_SQUEEZY_CHECKOUT_URL;
 
   const isPro = subscription?.status === "active";

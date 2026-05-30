@@ -56,34 +56,8 @@ export async function POST(request: Request) {
     );
   }
 
-  // Free tier: max 1 active key. Check plan before creating.
-  const { data: membership } = await supabase
-    .from("memberships").select("org_id").eq("user_id", user.id).limit(1).maybeSingle();
-
-  if (membership) {
-    const orgId = (membership as { org_id: string }).org_id;
-
-    // Get org's current plan
-    const { data: org } = await supabase
-      .from("orgs").select("plan_id, plans(name, max_keys)").eq("id", orgId).limit(1).maybeSingle();
-
-    const plan = (org as { plans?: { name: string; max_keys: number } } | null)?.plans;
-    const maxKeys = plan?.max_keys ?? 1;
-
-    if (maxKeys !== -1) {
-      // Finite limit — count active keys
-      const { count } = await supabase
-        .from("api_keys").select("id", { count: "exact", head: true })
-        .eq("org_id", orgId).eq("is_active", true);
-
-      if ((count ?? 0) >= maxKeys) {
-        return NextResponse.json(
-          { error: "Free tier allows 1 API key. Upgrade to Pro for unlimited keys.", upgrade: true },
-          { status: 403 }
-        );
-      }
-    }
-  }
+  // Free tier limit enforced atomically by DB trigger check_api_key_limit().
+  // The insert error handler below translates key_limit_exceeded → 403 + upgrade:true.
 
   // Fail closed: real AES-256-GCM encryption is mandatory. No master key → refuse
   // (never store the customer key in plaintext or a placeholder).
