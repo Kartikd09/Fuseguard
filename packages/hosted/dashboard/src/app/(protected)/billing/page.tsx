@@ -1,5 +1,5 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
-// Billing page — Free vs Pro ($19/mo) tier display. Lemon Squeezy checkout placeholder.
+// Billing page — Free vs Pro ($15/mo) tier display. Lemon Squeezy checkout.
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchSubscription, resolveActiveOrgId } from "@/lib/data/queries";
