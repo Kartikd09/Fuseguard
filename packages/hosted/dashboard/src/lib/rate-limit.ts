@@ -11,10 +11,14 @@ interface Window {
 }
 
 const buckets = new Map<string, Window>();
+let lastSweep = 0;
+const SWEEP_INTERVAL_MS = 60_000;
 
-// Periodically evict expired buckets so the map doesn't grow unbounded.
+// Evict expired buckets at most once per minute (not on every call) so the map doesn't
+// grow unbounded without making every request pay an O(n) scan.
 function sweep(now: number): void {
-  if (buckets.size < 1000) return;
+  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
+  lastSweep = now;
   for (const [key, w] of buckets) {
     if (w.resetAt < now) buckets.delete(key);
   }

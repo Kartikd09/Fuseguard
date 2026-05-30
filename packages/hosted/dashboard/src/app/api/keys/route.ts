@@ -36,7 +36,10 @@ export async function POST(request: Request) {
   // Rate limit: 10 key creations per minute per user.
   const rl = rateLimit(`keys:${user.id}`, 10, 60_000);
   if (!rl.allowed) {
-    return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
+    return NextResponse.json(
+      { error: "Too many requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
   }
 
   let body: unknown;

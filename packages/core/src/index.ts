@@ -6,7 +6,7 @@ import type { ProxyEnv, KeyLookupResult } from "./proxy/worker.js";
 import { BudgetDO } from "./budget-do.js";
 import { decryptKey } from "./crypto/index.js";
 import { safeEqual } from "./auth.js";
-import { isHandledEvent, mapLsStatus, verifyLsSignature } from "./lemon-squeezy.js";
+import { isHandledEvent, mapLsStatus, verifyLsSignature, isStaleEvent } from "./lemon-squeezy.js";
 export { BudgetDO } from "./budget-do.js";
 
 export interface Env {
@@ -299,14 +299,14 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
 
   const planId = status === "active" ? proPlanId : freePlanId;
 
-  // Replay guard: ignore events older than the last processed one. A valid HMAC is
-  // valid forever, so a replayed stale subscription_cancelled could otherwise downgrade
-  // an active sub. LS event timestamp (attrs.updated_at) is monotonic per subscription.
-  const eventTs = attrs.updated_at ? new Date(attrs.updated_at).getTime() : Date.now();
+  // Replay guard: a valid HMAC is valid forever, so a replayed stale subscription_cancelled
+  // could downgrade an active sub. Skip events not newer than the last processed one.
+  // NOTE: read-then-write is non-atomic (TOCTOU window remains under concurrent LS retries);
+  // a DB-side conditional write is the post-launch hardening. See isStaleEvent for semantics.
   const existing = await sbGet<{ updated_at: string }>(
     env, "subscriptions", `org_id=eq.${encodeURIComponent(orgId)}&select=updated_at&limit=1`
   ).catch(() => []);
-  if (existing[0]?.updated_at && new Date(existing[0].updated_at).getTime() > eventTs) {
+  if (isStaleEvent(existing[0]?.updated_at, attrs.updated_at)) {
     console.warn("[fuseguard:webhook] ignoring stale event", eventName, orgId);
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
@@ -320,7 +320,8 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     plan_id: planId,
     status,
     renews_at: attrs.renews_at ?? null,
-    updated_at: new Date(eventTs).toISOString(),
+    // Store the LS event timestamp (not now()) so the replay guard compares like-for-like.
+    updated_at: attrs.updated_at ?? new Date().toISOString(),
   });
 
   // Sync org plan_id — log on failure so stale plan_id is observable.

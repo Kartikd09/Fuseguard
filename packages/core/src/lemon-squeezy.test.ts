@@ -4,6 +4,7 @@ import {
   mapLsStatus,
   verifyLsSignature,
   computeLsSignature,
+  isStaleEvent,
   LS_HANDLED_EVENTS,
 } from "./lemon-squeezy.js";
 
@@ -86,5 +87,36 @@ describe("verifyLsSignature", () => {
 
   it("rejects odd-length hex signature without throwing", async () => {
     expect(await verifyLsSignature("body", "abc", SECRET)).toBe(false);
+  });
+});
+
+describe("isStaleEvent (replay guard)", () => {
+  const T1 = "2026-05-31T10:00:00Z";
+  const T2 = "2026-05-31T11:00:00Z";
+
+  it("newer event is not stale", () => {
+    expect(isStaleEvent(T1, T2)).toBe(false);
+  });
+
+  it("older event is stale", () => {
+    expect(isStaleEvent(T2, T1)).toBe(true);
+  });
+
+  it("equal-timestamp event is stale (prevents same-second reorder)", () => {
+    expect(isStaleEvent(T1, T1)).toBe(true);
+  });
+
+  it("missing event timestamp is treated as stale (fail-safe)", () => {
+    expect(isStaleEvent(T1, undefined)).toBe(true);
+    expect(isStaleEvent(T1, null)).toBe(true);
+  });
+
+  it("invalid event timestamp is stale", () => {
+    expect(isStaleEvent(T1, "not-a-date")).toBe(true);
+  });
+
+  it("no prior record → event is not stale (first write)", () => {
+    expect(isStaleEvent(null, T1)).toBe(false);
+    expect(isStaleEvent(undefined, T1)).toBe(false);
   });
 });

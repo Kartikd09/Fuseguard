@@ -32,6 +32,20 @@ export function isHandledEvent(eventName: string): boolean {
   return LS_HANDLED_EVENTS.has(eventName);
 }
 
+// Replay guard: an incoming webhook event is stale if its timestamp is <= the last
+// processed one. Uses >= (not >) so equal-second events (LS timestamps are
+// second-granularity) can't reorder a cancel over an active update. A missing/invalid
+// incoming timestamp is treated as stale (fail-safe — don't let an untimestamped event win).
+export function isStaleEvent(storedTsIso: string | null | undefined, eventTsIso: string | null | undefined): boolean {
+  if (!eventTsIso) return true; // no event timestamp → cannot prove it's newer → treat as stale
+  const eventTs = new Date(eventTsIso).getTime();
+  if (Number.isNaN(eventTs)) return true;
+  if (!storedTsIso) return false; // no prior record → not stale
+  const storedTs = new Date(storedTsIso).getTime();
+  if (Number.isNaN(storedTs)) return false;
+  return eventTs <= storedTs;
+}
+
 // Constant-time HMAC-SHA256 verify. Rejects malformed/odd-length hex defensively.
 export async function verifyLsSignature(
   body: string,
