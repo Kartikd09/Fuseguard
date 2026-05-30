@@ -67,9 +67,14 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
         body: JSON.stringify({ label: label.trim(), anthropicKey }),
       });
 
-      const json = (await res.json()) as { fuseGuardKey?: string; error?: string };
+      const json = (await res.json()) as { fuseGuardKey?: string; error?: string; upgrade?: boolean };
 
       if (!res.ok) {
+        if (json.upgrade) {
+          // Free tier limit — redirect to billing
+          router.push("/billing");
+          return;
+        }
         setError(json.error ?? "Failed to create key");
         setIsSubmitting(false);
         return;
