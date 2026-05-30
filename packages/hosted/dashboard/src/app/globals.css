@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+}
+
+@layer utilities {
+  .fg-card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-6;
+  }
+
+  .fg-badge-danger {
+    @apply inline-flex items-center gap-1 rounded-full bg-red-900/40 text-red-400 px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .fg-badge-warning {
+    @apply inline-flex items-center gap-1 rounded-full bg-yellow-900/40 text-yellow-400 px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .fg-badge-success {
+    @apply inline-flex items-center gap-1 rounded-full bg-green-900/40 text-green-400 px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .fg-code {
+    @apply font-mono text-sm bg-gray-800 rounded px-1.5 py-0.5 text-gray-200;
+  }
+}
