@@ -5,6 +5,8 @@ import { createProxyHandler } from "./proxy/worker.js";
 import type { ProxyEnv, KeyLookupResult } from "./proxy/worker.js";
 import { BudgetDO } from "./budget-do.js";
 import { decryptKey } from "./crypto/index.js";
+import { safeEqual } from "./auth.js";
+import { isHandledEvent, mapLsStatus, verifyLsSignature, isStaleEvent } from "./lemon-squeezy.js";
 export { BudgetDO } from "./budget-do.js";
 
 export interface Env {
@@ -100,7 +102,7 @@ export function resolveSelfhostKey(
 ): { orgId: string; anthropicKey: string; limitUsd: number } | null {
   const { SELFHOST_FUSEGUARD_KEY_HASH: hash, SELFHOST_ANTHROPIC_KEY: anthropicKey, SELFHOST_BUDGET_USD: budgetRaw } = cfg;
   if (!hash || !anthropicKey || !budgetRaw) return null;
-  if (keyHash !== hash) return null;
+  if (!safeEqual(keyHash, hash)) return null; // constant-time compare
   const limitUsd = Number(budgetRaw);
   if (!Number.isFinite(limitUsd) || limitUsd <= 0) return null;
   return { orgId: keyHash.slice(0, 16), anthropicKey, limitUsd };
@@ -222,30 +224,8 @@ function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void 
 }
 
 // ── Lemon Squeezy webhook handler ────────────────────────────────────────────────────────────
-
-// Events we act on — ignore all others to prevent accidental downgrades on unrelated events.
-// Events that carry a subscription status we act on.
-// subscription_updated covers most state transitions (active, past_due, etc.).
-// subscription_resumed/paused are emitted separately and also carry status.
-const LS_HANDLED_EVENTS = new Set([
-  "subscription_created",
-  "subscription_updated",
-  "subscription_cancelled",
-  "subscription_expired",
-  "subscription_resumed",
-  "subscription_paused",
-  "subscription_unpaused",
-]);
-
-// Constant-time HMAC-SHA256 verify. Parses hex defensively — rejects malformed signatures cleanly.
-async function verifyLsSignature(body: string, signature: string, secret: string): Promise<boolean> {
-  // Reject empty or non-hex signatures before touching crypto — avoids NaN/exception paths.
-  if (!/^[0-9a-f]{1,}$/i.test(signature) || signature.length % 2 !== 0) return false;
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const sigBytes = new Uint8Array((signature.match(/.{2}/g) ?? []).map((b) => parseInt(b, 16)));
-  return crypto.subtle.verify("HMAC", key, sigBytes, enc.encode(body));
-}
+// Pure logic (signature verify, status map, event allowlist) lives in ./lemon-squeezy.ts
+// so it stays under unit-test coverage; this handler is the Supabase-wiring glue.
 
 async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   if (!env.LEMON_SQUEEZY_WEBHOOK_SECRET) {
@@ -269,6 +249,7 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
         renews_at?: string;
         order_id?: number;
         customer_id?: number;
+        updated_at?: string; // LS event timestamp — used for replay guard
       };
       id?: string;
     };
@@ -283,7 +264,7 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
   const eventName = payload.meta?.event_name ?? "";
 
   // Ignore unrelated events — prevents accidental plan downgrades from payment/other events.
-  if (!LS_HANDLED_EVENTS.has(eventName)) {
+  if (!isHandledEvent(eventName)) {
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
 
@@ -304,19 +285,8 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
 
-  // Map LS status to our enum. Only explicit cancellation events reach here (gated above).
-  const statusMap: Record<string, string> = {
-    active: "active",
-    on_trial: "active",   // LS test mode sends this for new subscriptions
-    trialing: "active",
-    past_due: "past_due",
-    unpaid: "past_due",
-    paused: "past_due",
-    cancelled: "cancelled",
-    expired: "cancelled",
-  };
-  // subscription_updated can carry any status; default conservatively to cancelled.
-  const status = statusMap[attrs.status ?? ""] ?? "cancelled";
+  // subscription_updated can carry any status; mapLsStatus defaults conservatively to cancelled.
+  const status = mapLsStatus(attrs.status);
 
   const allPlans = await sbGet<{ id: string; name: string }>(env, "plans", "name=in.(pro,free)&select=id,name&limit=2").catch(() => []);
   const proPlanId = allPlans.find((p) => p.name === "pro")?.id;
@@ -329,6 +299,18 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
 
   const planId = status === "active" ? proPlanId : freePlanId;
 
+  // Replay guard: a valid HMAC is valid forever, so a replayed stale subscription_cancelled
+  // could downgrade an active sub. Skip events not newer than the last processed one.
+  // NOTE: read-then-write is non-atomic (TOCTOU window remains under concurrent LS retries);
+  // a DB-side conditional write is the post-launch hardening. See isStaleEvent for semantics.
+  const existing = await sbGet<{ updated_at: string }>(
+    env, "subscriptions", `org_id=eq.${encodeURIComponent(orgId)}&select=updated_at&limit=1`
+  ).catch(() => []);
+  if (isStaleEvent(existing[0]?.updated_at, attrs.updated_at)) {
+    console.warn("[fuseguard:webhook] ignoring stale event", eventName, orgId);
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }
+
   // Upsert subscription — idempotent on org_id (LS may replay).
   await sbUpsert(env, "subscriptions", "org_id", {
     org_id: orgId,
@@ -338,7 +320,8 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     plan_id: planId,
     status,
     renews_at: attrs.renews_at ?? null,
-    updated_at: new Date().toISOString(),
+    // Store the LS event timestamp (not now()) so the replay guard compares like-for-like.
+    updated_at: attrs.updated_at ?? new Date().toISOString(),
   });
 
   // Sync org plan_id — log on failure so stale plan_id is observable.

@@ -7,6 +7,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateFuseGuardKey, hashKey } from "@/lib/crypto/keys";
 import { encryptSecret } from "@/lib/crypto/encrypt";
 import { resolveActiveOrgId } from "@/lib/data/queries";
+import { rateLimit } from "@/lib/rate-limit";
 
 interface CreateKeyBody {
   label: string;
@@ -30,6 +31,15 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: 10 key creations per minute per user.
+  const rl = rateLimit(`keys:${user.id}`, 10, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
   }
 
   let body: unknown;

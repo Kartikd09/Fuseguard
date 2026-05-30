@@ -2,6 +2,7 @@
 // PATCH /api/budgets/[id] — update a budget. DELETE /api/budgets/[id] — deactivate.
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { resolveActiveOrgId } from "@/lib/data/queries";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 
 interface UpdateBudgetBody {
@@ -13,11 +14,6 @@ interface UpdateBudgetBody {
   window_seconds?: number | null;
 }
 
-async function getOrgId(supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>, userId: string): Promise<string | null> {
-  const { data } = await supabase.from("memberships").select("org_id").eq("user_id", userId).limit(1).maybeSingle();
-  return (data as { org_id: string } | null)?.org_id ?? null;
-}
-
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -27,7 +23,7 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const orgId = await getOrgId(supabase, user.id);
+  const orgId = await resolveActiveOrgId(supabase);
   if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
   let body: UpdateBudgetBody;
@@ -43,7 +39,10 @@ export async function PATCH(
   if (body.window_seconds !== undefined) updates["window_seconds"] = body.window_seconds;
 
   const { error } = await supabase.from("budgets").update(updates).eq("id", id).eq("org_id", orgId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[budgets] update failed:", error);
+    return NextResponse.json({ error: "Failed to update budget" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -56,10 +55,13 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const orgId = await getOrgId(supabase, user.id);
+  const orgId = await resolveActiveOrgId(supabase);
   if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
   const { error } = await supabase.from("budgets").update({ is_active: false }).eq("id", id).eq("org_id", orgId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[budgets] delete failed:", error);
+    return NextResponse.json({ error: "Failed to delete budget" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
