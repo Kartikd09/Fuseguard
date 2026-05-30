@@ -10,7 +10,9 @@ import {
   filterToWindow,
   formatUsd,
   formatTokens,
+  buildHourlySpend,
 } from "../spend";
+import type { UsageEvent, Block } from "@/types";
 import {
   mockEvents,
   mockBlocks,
@@ -19,6 +21,40 @@ import {
   mockBudgetUsd,
   mockBudgetTokens,
 } from "@/test/fixtures";
+
+describe("buildHourlySpend", () => {
+  const ref = "2025-05-30T12:00:00Z"; // reference "now"
+  const ev = (ts: string, cost: number): UsageEvent =>
+    ({ id: ts, org_id: "o", api_key_id: "k", session: null, model: "claude-sonnet-4",
+       input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+       cost_usd: cost, status: "ok", request_hash: "h", ts } as UsageEvent);
+  const blk = (ts: string): Block =>
+    ({ id: ts, org_id: "o", api_key_id: "k", session: null, reason: "budget_exceeded",
+       scope: "key", budget_id: "b", projected_usd: 1, current_usd: 1, ts } as Block);
+
+  it("returns one point per hour", () => {
+    expect(buildHourlySpend([], [], 6, ref)).toHaveLength(6);
+  });
+
+  it("buckets spend into the correct hour", () => {
+    // 3 hours before noon = 09:xx bucket
+    const pts = buildHourlySpend([ev("2025-05-30T09:30:00Z", 0.5)], [], 6, ref);
+    const total = pts.reduce((s, p) => s + p.spend, 0);
+    expect(total).toBeCloseTo(0.5, 6);
+    // the 09:00 bucket (index 3 of 6h window starting 06:00) holds it
+    expect(pts[3]!.spend).toBeCloseTo(0.5, 6);
+  });
+
+  it("counts blocks per hour", () => {
+    const pts = buildHourlySpend([], [blk("2025-05-30T11:10:00Z"), blk("2025-05-30T11:50:00Z")], 6, ref);
+    expect(pts[5]!.blocked).toBe(2);
+  });
+
+  it("ignores events outside the window", () => {
+    const pts = buildHourlySpend([ev("2025-05-30T01:00:00Z", 9)], [], 6, ref);
+    expect(pts.reduce((s, p) => s + p.spend, 0)).toBe(0);
+  });
+});
 
 describe("aggregateTotalSpend", () => {
   it("sums cost_usd across all events", () => {

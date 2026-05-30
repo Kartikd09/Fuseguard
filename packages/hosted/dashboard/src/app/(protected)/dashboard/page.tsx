@@ -4,7 +4,9 @@
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchApiKeys, fetchBudgets, fetchBlocks, fetchUsageEvents, hoursAgoIso } from "@/lib/data/queries";
+import SpendChart from "@/components/ui/SpendChart";
 import {
+  buildHourlySpend,
   buildSpendSummary,
   buildKeySpend,
   buildTopSpenders,
@@ -45,6 +47,7 @@ export default async function DashboardPage() {
   const summary = buildSpendSummary(events, blocks, "last 24h");
   const keySpend = buildKeySpend(keys, events, blocks, budgets);
   const topSpenders = buildTopSpenders(keySpend, 5);
+  const hourly = buildHourlySpend(events, blocks, 24, new Date().toISOString());
 
   const hasActivity = events.length > 0 || blocks.length > 0;
   const hasFirstBlock = blocks.length > 0;
@@ -113,6 +116,18 @@ export default async function DashboardPage() {
           icon={<KeyRound className="h-4 w-4" />}
         />
       </div>
+
+      {/* Spend-over-time chart */}
+      {hasActivity && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Spend &amp; blocks — last 24h</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SpendChart data={hourly} height={240} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* No activity yet */}
       {!hasActivity && (

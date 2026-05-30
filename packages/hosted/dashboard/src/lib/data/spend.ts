@@ -160,3 +160,51 @@ export function formatTokens(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString("en-US");
 }
+
+export interface HourlySpendPoint {
+  readonly label: string;
+  readonly spend: number;
+  readonly blocked: number;
+}
+
+/**
+ * Bucket usage events (spend) and blocks into hourly points over the last `hours`,
+ * ending at `referenceIso`. Returns one point per hour, oldest→newest, for the spend chart.
+ */
+export function buildHourlySpend(
+  events: UsageEvent[],
+  blocks: Block[],
+  hours: number,
+  referenceIso: string
+): HourlySpendPoint[] {
+  const HOUR_MS = 3_600_000;
+  const refMs = new Date(referenceIso).getTime();
+  const startMs = refMs - hours * HOUR_MS;
+
+  const points: { spend: number; blocked: number; startMs: number }[] = Array.from(
+    { length: hours },
+    (_, i) => ({ spend: 0, blocked: 0, startMs: startMs + i * HOUR_MS })
+  );
+
+  const bucketIndex = (iso: string): number => {
+    const ms = new Date(iso).getTime();
+    if (ms < startMs || ms > refMs) return -1;
+    const idx = Math.floor((ms - startMs) / HOUR_MS);
+    return idx >= hours ? hours - 1 : idx;
+  };
+
+  for (const e of events) {
+    const i = bucketIndex(e.ts);
+    if (i >= 0) points[i]!.spend += e.cost_usd;
+  }
+  for (const b of blocks) {
+    const i = bucketIndex(b.ts);
+    if (i >= 0) points[i]!.blocked += 1;
+  }
+
+  return points.map((p) => ({
+    label: new Date(p.startMs).toLocaleTimeString("en-US", { hour: "numeric", hour12: true }),
+    spend: Math.round(p.spend * 1_000_000) / 1_000_000,
+    blocked: p.blocked,
+  }));
+}
