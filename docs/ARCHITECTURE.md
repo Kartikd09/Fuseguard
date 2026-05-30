@@ -106,6 +106,33 @@ trade-off — FuseGuard's promise is "never over-spend," and a rare early block 
 a single over-spend is a product failure. The 402 message states it's a worst-case projection so
 users understand and can raise `max_tokens`-aware budgets.
 
+**Measured over-estimation (from `estimator.accuracy.test.ts` — deterministic, 108 scenarios
+across 3 models × 3 input sizes × 3 max_tokens × 4 output-ratio buckets):**
+
+| Actual output as % of max_tokens | Median over-estimate | p95 over-estimate | Median early-block window |
+|---|---|---|---|
+| 5% (very short answers) | **6.9×** | 19.0× | 85% |
+| 20% (typical LLM call) | **3.6×** | 5.0× | 72% |
+| 50% (moderate output) | **1.8×** | 2.0× | 45% |
+| 100% (fills max_tokens) | **1.0×** | 1.0× | 0% |
+
+**What this means for budget design:**
+
+- The over-estimate ratio shrinks when input tokens dominate the cost (large prompts,
+  small `max_tokens`) because the input component is identical in both worst-case and actual cost.
+  It approaches `1 / outputRatio` when output dominates (small prompt, large `max_tokens`).
+- A call that produces 20% of its `max_tokens` (the typical case) causes FuseGuard to reserve
+  ~3.6× what was actually spent. The remaining ~72% of the reservation is released on reconcile,
+  but during the call that headroom is held against the budget.
+
+**Budget guidance for users:** Set your budget ceiling at least **4–5× above your expected
+actual spend** when using high `max_tokens` values (≥1024) and expecting short outputs. For
+example: if you expect to spend $10 and your average call uses ~20% of `max_tokens`, set a
+budget of $35–50 to avoid false-positive 402 blocks. Alternatively, lower your `max_tokens` to
+match the longest realistic output — the tighter `max_tokens`, the less reservation pressure.
+The reconcile step returns unused reservation after each call, so the ceiling does not accumulate
+over time; only the in-flight worst-case reservation is inflated.
+
 ### (b) Streaming responses — token reconciliation
 **Decision:** For `stream: true`, reserve worst case pre-flight (same as non-stream). Pipe the SSE
 stream straight to the client (no buffering — protects first-byte latency). Tee a lightweight reader
