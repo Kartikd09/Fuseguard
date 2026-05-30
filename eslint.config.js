@@ -5,7 +5,16 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.wrangler/**"],
+    // The dashboard (Next.js) lints itself via its own Next ESLint config; exclude it +
+    // all build artifacts / generated files from the root lint to avoid false errors.
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/*.tsbuildinfo",
+      "**/.wrangler/**",
+      "**/.next/**",
+      "packages/hosted/dashboard/**",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
