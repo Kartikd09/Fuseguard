@@ -29,7 +29,7 @@ interface BudgetFormData {
   scope_ref: string;
   limit_type: LimitType;
   limit_value: string;
-  window: BudgetWindow;
+  window_type: BudgetWindow;
   window_hours: string;
 }
 
@@ -50,7 +50,7 @@ export default function CreateBudgetButton({ keys, asText }: CreateBudgetButtonP
     scope_ref: "",
     limit_type: "usd",
     limit_value: "",
-    window: "daily",
+    window_type: "daily",
     window_hours: "24",
   });
 
@@ -75,9 +75,9 @@ export default function CreateBudgetButton({ keys, asText }: CreateBudgetButtonP
       scope_ref: form.scope_ref || null,
       limit_type: form.limit_type,
       limit_value: limitValue,
-      window: form.window,
+      window: form.window_type,
       window_seconds:
-        form.window === "rolling" ? parseInt(form.window_hours, 10) * 3600 : null,
+        form.window_type === "rolling" ? parseInt(form.window_hours, 10) * 3600 : null,
     };
 
     try {
@@ -213,8 +213,8 @@ export default function CreateBudgetButton({ keys, asText }: CreateBudgetButtonP
               <Label htmlFor="budget-window">Reset window</Label>
               <select
                 id="budget-window"
-                value={form.window}
-                onChange={(e) => update("window", e.target.value as BudgetWindow)}
+                value={form.window_type}
+                onChange={(e) => update("window_type", e.target.value as BudgetWindow)}
                 className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 {WINDOW_OPTIONS.map((o) => (
@@ -224,7 +224,7 @@ export default function CreateBudgetButton({ keys, asText }: CreateBudgetButtonP
                 ))}
               </select>
 
-              {form.window === "rolling" && (
+              {form.window_type === "rolling" && (
                 <div className="space-y-1">
                   <Label htmlFor="window-hours" className="text-xs text-muted-foreground">
                     Window size (hours)

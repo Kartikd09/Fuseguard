@@ -30,7 +30,7 @@ function budgetWindowLabel(budget: Budget): string {
       ? `Rolling ${Math.round(budget.window_seconds / 3600)}h`
       : "Rolling",
   };
-  return map[budget.window] ?? budget.window;
+  return map[budget.window_type] ?? budget.window_type;
 }
 
 function limitLabel(budget: Budget): string {

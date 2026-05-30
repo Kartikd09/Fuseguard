@@ -9,7 +9,7 @@ interface CreateBudgetBody {
   scope_ref: string | null;
   limit_type: LimitType;
   limit_value: number;
-  window: BudgetWindow;
+  window_type: BudgetWindow;
   window_seconds: number | null;
 }
 
@@ -23,7 +23,7 @@ function isValidBody(v: unknown): v is CreateBudgetBody {
   return (
     VALID_SCOPES.includes(b["scope"] as BudgetScope) &&
     VALID_LIMIT_TYPES.includes(b["limit_type"] as LimitType) &&
-    VALID_WINDOWS.includes(b["window"] as BudgetWindow) &&
+    VALID_WINDOWS.includes(b["window_type"] as BudgetWindow) &&
     typeof b["limit_value"] === "number" &&
     (b["scope_ref"] === null || typeof b["scope_ref"] === "string") &&
     (b["window_seconds"] === null || typeof b["window_seconds"] === "number")
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "limit_value must be positive" }, { status: 400 });
   }
 
-  if (body.window === "rolling" && (!body.window_seconds || body.window_seconds < 60)) {
+  if (body.window_type === "rolling" && (body.window_seconds == null || body.window_seconds < 60)) {
     return NextResponse.json(
       { error: "Rolling window requires window_seconds >= 60" },
       { status: 400 }
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     scope_ref: body.scope_ref,
     limit_type: body.limit_type,
     limit_value: body.limit_value,
-    window: body.window,
+    window_type: body.window_type,
     window_seconds: body.window_seconds,
     is_active: true,
   });
