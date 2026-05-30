@@ -3,7 +3,7 @@
 // Server Component: fetches data server-side; client child polls for freshness (2s).
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchApiKeys, fetchBudgets, fetchBlocks, fetchUsageEvents, hoursAgoIso } from "@/lib/data/queries";
+import { fetchApiKeys, fetchBudgets, fetchBlocks, fetchUsageEvents, hoursAgoIso, resolveActiveOrgId } from "@/lib/data/queries";
 import SpendChart from "@/components/ui/SpendChart";
 import {
   buildHourlySpend,
@@ -51,12 +51,17 @@ export default async function DashboardPage({
 
   const supabase = await createServerSupabaseClient();
   const since = hoursAgoIso(hours);
+  const orgId = await resolveActiveOrgId(supabase);
+
+  if (!orgId) {
+    return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
+  }
 
   const [keys, budgets, events, blocks] = await Promise.all([
-    fetchApiKeys(supabase),
-    fetchBudgets(supabase),
-    fetchUsageEvents(supabase, since),
-    fetchBlocks(supabase, since),
+    fetchApiKeys(supabase, orgId),
+    fetchBudgets(supabase, orgId),
+    fetchUsageEvents(supabase, orgId, since),
+    fetchBlocks(supabase, orgId, since),
   ]);
 
   const summary = buildSpendSummary(events, blocks, label);

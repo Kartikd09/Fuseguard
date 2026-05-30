@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
+import { resolveActiveOrgId } from "@/lib/data/queries";
 
 interface CreateBudgetBody {
   scope: BudgetScope;
@@ -62,19 +63,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: membership, error: orgError } = await supabase
-    .from("memberships")
-    .select("org_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (orgError || !membership) {
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) {
     return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
 
   const { error: insertError } = await supabase.from("budgets").insert({
-    org_id: (membership as { org_id: string }).org_id,
+    org_id: orgId,
     scope: body.scope,
     scope_ref: body.scope_ref,
     limit_type: body.limit_type,

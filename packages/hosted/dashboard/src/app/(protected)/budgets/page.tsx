@@ -2,7 +2,7 @@
 // Budgets page — CRUD budgets (scope, limit_type, value, window).
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchBudgets, fetchApiKeys, fetchUsageEvents, hoursAgoIso } from "@/lib/data/queries";
+import { fetchBudgets, fetchApiKeys, fetchUsageEvents, hoursAgoIso, resolveActiveOrgId } from "@/lib/data/queries";
 import { budgetUsedPercent, formatUsd, formatTokens } from "@/lib/data/spend";
 import EmptyState from "@/components/ui/EmptyState";
 import BudgetBar from "@/components/ui/BudgetBar";
@@ -42,10 +42,11 @@ function limitLabel(budget: Budget): string {
 export default async function BudgetsPage({ searchParams }: { searchParams: Promise<{ keyId?: string }> }) {
   const { keyId } = await searchParams;
   const supabase = await createServerSupabaseClient();
+  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
   const [budgets, keys, events] = await Promise.all([
-    fetchBudgets(supabase),
-    fetchApiKeys(supabase),
-    fetchUsageEvents(supabase, hoursAgoIso(24)),
+    fetchBudgets(supabase, orgId),
+    fetchApiKeys(supabase, orgId),
+    fetchUsageEvents(supabase, orgId, hoursAgoIso(24)),
   ]);
 
   const keyById = new Map(keys.map((k) => [k.id, k]));

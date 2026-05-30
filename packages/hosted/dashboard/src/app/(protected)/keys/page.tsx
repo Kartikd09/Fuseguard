@@ -2,7 +2,7 @@
 // API Keys page — list (masked), create, per-key budget summary.
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchApiKeys, fetchBudgets } from "@/lib/data/queries";
+import { fetchApiKeys, fetchBudgets, resolveActiveOrgId } from "@/lib/data/queries";
 import EmptyState from "@/components/ui/EmptyState";
 import CreateKeyButton from "./CreateKeyButton";
 import KeyRow from "./KeyRow";
@@ -16,9 +16,10 @@ export const dynamic = "force-dynamic";
 
 export default async function KeysPage() {
   const supabase = await createServerSupabaseClient();
+  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
   const [keys, budgets] = await Promise.all([
-    fetchApiKeys(supabase),
-    fetchBudgets(supabase),
+    fetchApiKeys(supabase, orgId),
+    fetchBudgets(supabase, orgId),
   ]);
 
   return (
