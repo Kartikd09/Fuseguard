@@ -22,6 +22,7 @@ import { Plus, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 interface CreateKeyButtonProps {
   keyCount: number;
+  maxKeys: number; // -1 = unlimited (Pro)
 }
 
 type ModalState = "closed" | "form" | "created";
@@ -31,7 +32,7 @@ interface CreatedKey {
   fuseGuardKey: string;
 }
 
-export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
+export default function CreateKeyButton({ keyCount, maxKeys }: CreateKeyButtonProps) {
   const [modalState, setModalState] = useState<ModalState>("closed");
   const [label, setLabel] = useState("");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -40,7 +41,8 @@ export default function CreateKeyButton({ keyCount }: CreateKeyButtonProps) {
   const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const router = useRouter();
 
-  const isAtFreeLimit = keyCount >= 1;
+  // -1 = unlimited (Pro). Otherwise at-limit when count reaches the plan ceiling.
+  const isAtFreeLimit = maxKeys !== -1 && keyCount >= maxKeys;
 
   function openModal() {
     setModalState("form");

@@ -2,7 +2,7 @@
 // API Keys page — list (masked), create, per-key budget summary.
 import type { Metadata } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { fetchApiKeys, fetchBudgets, resolveActiveOrgId } from "@/lib/data/queries";
+import { fetchApiKeys, fetchBudgets, fetchOrgPlan, resolveActiveOrgId } from "@/lib/data/queries";
 import EmptyState from "@/components/ui/EmptyState";
 import CreateKeyButton from "./CreateKeyButton";
 import KeyRow from "./KeyRow";
@@ -19,10 +19,12 @@ export default async function KeysPage() {
   const supabase = await createServerSupabaseClient();
   const orgId = await resolveActiveOrgId(supabase);
   if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
-  const [keys, budgets] = await Promise.all([
+  const [keys, budgets, plan] = await Promise.all([
     fetchApiKeys(supabase, orgId),
     fetchBudgets(supabase, orgId),
+    fetchOrgPlan(supabase, orgId),
   ]);
+  const maxKeys = plan?.max_keys ?? 1; // -1 = unlimited
 
   return (
     <div className="space-y-6">
@@ -33,7 +35,7 @@ export default async function KeysPage() {
             Each key proxies calls to Anthropic with your encrypted API key.
           </p>
         </div>
-        <CreateKeyButton keyCount={keys.length} />
+        <CreateKeyButton keyCount={keys.length} maxKeys={maxKeys} />
       </div>
 
       {keys.length === 0 ? (

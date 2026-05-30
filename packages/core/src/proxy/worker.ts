@@ -15,6 +15,9 @@ export interface KeyLookupResult {
   readonly orgId: string;
   readonly anthropicKey: string;
   readonly limitUsd: number;
+  // Whether a USD budget is configured for this key. If false, the proxy applies FAILURE_MODE
+  // (closed → block, open → forward unmetered) rather than treating it as unlimited.
+  readonly hasBudget: boolean;
   readonly keyDO: BudgetDO;
   readonly sessionDO: BudgetDO | null;
 }
@@ -213,7 +216,7 @@ function teeStreamWithReconcile(
   upstreamStream: ReadableStream<Uint8Array>,
   keyDO: BudgetDO,
   sessionDO: BudgetDO | null,
-  keyReservationId: string,
+  keyReservationId: string | null,
   sessionReservationId: string | null,
   model: string,
   worstCaseCost: number,
@@ -283,7 +286,7 @@ function teeStreamWithReconcile(
       : worstCaseCost;
 
     try {
-      await reconcile(keyDO, keyReservationId, actualCost);
+      if (keyReservationId != null) await reconcile(keyDO, keyReservationId, actualCost);
     } catch (err) {
       emitEvent({ type: "reconcile_error", scope: "key", error: String(err) });
     }
@@ -457,7 +460,18 @@ export function createProxyHandler() {
       return err401("Unknown or inactive FuseGuard API key");
     }
 
-    const { orgId, anthropicKey, keyDO, sessionDO } = keyLookup;
+    const { orgId, anthropicKey, hasBudget, keyDO, sessionDO } = keyLookup;
+
+    // C3: no budget configured ⇒ cannot enforce a ceiling. Never treat as unlimited.
+    // Fail-closed (hosted default): block with a clear message telling the user to set a budget.
+    // Fail-open (OSS self-host opt-in): forward unmetered.
+    if (!hasBudget) {
+      if (env.FAILURE_MODE === "closed") {
+        env.emitEvent({ type: "block", reason: "no_budget", scope: "key", orgId });
+        return err402("no_budget", "No budget is configured for this key. Set a budget in the FuseGuard dashboard to enable enforcement.", { scope: "key" });
+      }
+      // fail-open: forward without enforcement (do not reserve/loop-check against a 0 limit).
+    }
 
     // ── Body parsing + validation ────────────────────────────────────────────────────────────
     let rawBody: string;
@@ -474,55 +488,59 @@ export function createProxyHandler() {
       return err400("invalid_request", "Request body must include model (string), max_tokens (positive integer), and messages (array)");
     }
 
-    // ── Loop detection (Finding #7: wrap DO call with policy) ────────────────────────────────
-    const reqHash = requestHash({
-      model: validBody.model,
-      system: validBody.system,
-      messages: validBody.messages,
-      tools: validBody.tools,
-    });
-
-    const loopResult = await doCallWithPolicy(
-      () => recordLoop(keyDO, reqHash),
-      env.FAILURE_MODE,
-      env.emitEvent
-    );
-    if (!loopResult.ok) return loopResult.response;
-    if (loopResult.value.loop) {
-      return err402("loop_detected", "Loop detected: too many near-identical requests within the window", {
-        scope: "key",
-        count: loopResult.value.count,
-      });
-    }
-
-    // ── Pre-flight estimate ──────────────────────────────────────────────────────────────────
+    // Enforcement (loop detection + reservation) only runs when a budget exists.
+    // When !hasBudget we already returned (fail-closed) or are forwarding unmetered (fail-open).
     const estCost = estimateWorstCase(buildMessagesReq(validBody));
-
-    // ── Reserve key budget (Finding #7: DO errors apply failure policy) ──────────────────────
-    const keyReserveOutcome = await handleKeyReservation(
-      keyDO,
-      estCost,
-      env.FAILURE_MODE,
-      env.emitEvent,
-      orgId
-    );
-    if (keyReserveOutcome.blocked) return keyReserveOutcome.response;
-    const keyReservationId = keyReserveOutcome.reservationId;
-
-    // ── Reserve session budget (if session header present and session DO exists) ─────────────
+    let keyReservationId: string | null = null;
     let sessionReservationId: string | null = null;
-    if (sessionId != null && sessionDO != null) {
-      const sessionReserveOutcome = await handleSessionReservation(
-        sessionDO,
+
+    if (hasBudget) {
+      // ── Loop detection (Finding #7: wrap DO call with policy) ──────────────────────────────
+      const reqHash = requestHash({
+        model: validBody.model,
+        system: validBody.system,
+        messages: validBody.messages,
+        tools: validBody.tools,
+      });
+
+      const loopResult = await doCallWithPolicy(
+        () => recordLoop(keyDO, reqHash),
+        env.FAILURE_MODE,
+        env.emitEvent
+      );
+      if (!loopResult.ok) return loopResult.response;
+      if (loopResult.value.loop) {
+        return err402("loop_detected", "Loop detected: too many near-identical requests within the window", {
+          scope: "key",
+          count: loopResult.value.count,
+        });
+      }
+
+      // ── Reserve key budget (Finding #7: DO errors apply failure policy) ──────────────────────
+      const keyReserveOutcome = await handleKeyReservation(
         keyDO,
-        keyReservationId,
         estCost,
         env.FAILURE_MODE,
         env.emitEvent,
         orgId
       );
-      if (sessionReserveOutcome.blocked) return sessionReserveOutcome.response;
-      sessionReservationId = sessionReserveOutcome.reservationId;
+      if (keyReserveOutcome.blocked) return keyReserveOutcome.response;
+      keyReservationId = keyReserveOutcome.reservationId;
+
+      // ── Reserve session budget (if session header present and session DO exists) ─────────────
+      if (sessionId != null && sessionDO != null) {
+        const sessionReserveOutcome = await handleSessionReservation(
+          sessionDO,
+          keyDO,
+          keyReservationId,
+          estCost,
+          env.FAILURE_MODE,
+          env.emitEvent,
+          orgId
+        );
+        if (sessionReserveOutcome.blocked) return sessionReserveOutcome.response;
+        sessionReservationId = sessionReserveOutcome.reservationId;
+      }
     }
 
     // ── Forward to Anthropic ─────────────────────────────────────────────────────────────────
@@ -536,8 +554,8 @@ export function createProxyHandler() {
     try {
       upstreamResponse = await forwardToAnthropic(forwardRequest, anthropicKey, env.upstreamFetch);
     } catch {
-      // Forward failed — release reservations to avoid leaking holds.
-      await release(keyDO, keyReservationId).catch(() => undefined);
+      // Forward failed — release reservations to avoid leaking holds (none when !hasBudget).
+      if (keyReservationId != null) await release(keyDO, keyReservationId).catch(() => undefined);
       if (sessionDO != null && sessionReservationId != null) {
         await release(sessionDO, sessionReservationId).catch(() => undefined);
       }
@@ -599,7 +617,7 @@ export function createProxyHandler() {
     // Reconcile must never turn a post-forward DO error into a lost response: the client
     // already incurred upstream spend. Surface the error via emitEvent and still return the body.
     try {
-      await reconcile(keyDO, keyReservationId, actualCost);
+      if (keyReservationId != null) await reconcile(keyDO, keyReservationId, actualCost);
       if (sessionDO != null && sessionReservationId != null) {
         await reconcile(sessionDO, sessionReservationId, actualCost);
       }

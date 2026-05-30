@@ -154,14 +154,15 @@ export default function CreateBudgetButton({ keys, asText, defaultKeyId, editBud
           </DialogHeader>
 
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-            {/* Scope */}
+            {/* Scope — session budgets are not yet enforced server-side (see docs/AUDIT_FINDINGS C1),
+                so only API Key scope is offered until session DO wiring ships. */}
             <div className="space-y-1.5">
               <Label>Scope</Label>
               <div className="flex gap-2">
-                {(["key", "session"] as BudgetScope[]).map((s) => (
+                {(["key"] as BudgetScope[]).map((s) => (
                   <button key={s} type="button" onClick={() => update("scope", s)}
                     className={toggleButtonClass(form.scope === s)}>
-                    {s === "key" ? "API Key" : "Session"}
+                    API Key
                   </button>
                 ))}
               </div>

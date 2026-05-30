@@ -88,6 +88,21 @@ export async function fetchSubscription(
   return data as Subscription | null;
 }
 
+/** Fetch the org's plan (name + max_keys). max_keys = -1 means unlimited. */
+export async function fetchOrgPlan(
+  supabase: SupabaseClient,
+  orgId: string
+): Promise<{ name: string; max_keys: number } | null> {
+  const { data, error } = await supabase
+    .from("orgs")
+    .select("plans(name, max_keys)")
+    .eq("id", orgId)
+    .maybeSingle();
+
+  if (error) throw new Error(`fetchOrgPlan: ${error.message}`);
+  return (data as unknown as { plans?: { name: string; max_keys: number } } | null)?.plans ?? null;
+}
+
 /** ISO string for N hours ago from now. */
 export function hoursAgoIso(hours: number): string {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
