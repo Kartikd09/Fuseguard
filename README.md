@@ -33,9 +33,8 @@ Change one line — your Anthropic `base_url` — and you're protected.
 from anthropic import Anthropic
 
 client = Anthropic(
-    api_key="sk-ant-...",
-    base_url="http://localhost:8787/v1",          # ← point at FuseGuard
-    default_headers={"x-fuseguard-key": "fg_..."},
+    api_key="fg_...",                     # ← your FuseGuard key (real Anthropic key lives in FuseGuard)
+    base_url="http://localhost:8787/v1",  # ← point at FuseGuard
 )
 # Over budget? You get a 402 instead of a $47k bill.
 ```

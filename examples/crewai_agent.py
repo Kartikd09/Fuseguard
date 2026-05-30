@@ -8,7 +8,6 @@ The only change to make any CrewAI/LangChain agent safe is pointing the LLM's ba
 at FuseGuard.
 
 Run:
-    export ANTHROPIC_API_KEY="sk-ant-..."
     export FUSEGUARD_BASE_URL="http://localhost:8787/v1"
     export FUSEGUARD_KEY="fg_..."
     pip install crewai
@@ -24,9 +23,9 @@ from crewai.llm import LLM
 llm = LLM(
     model="anthropic/claude-sonnet-4",
     base_url=os.environ["FUSEGUARD_BASE_URL"],
-    api_key=os.environ["ANTHROPIC_API_KEY"],
+    # Send the FuseGuard key — your real Anthropic key lives inside FuseGuard.
+    api_key=os.environ["FUSEGUARD_KEY"],
     extra_headers={
-        "x-fuseguard-key": os.environ["FUSEGUARD_KEY"],
         # Optional: scope a budget to this agent run, not just the key.
         "x-fuseguard-session": "research-crew-run-1",
     },

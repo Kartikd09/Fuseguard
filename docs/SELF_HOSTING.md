@@ -44,10 +44,11 @@ Point your Anthropic client's `base_url` at the local proxy:
 from anthropic import Anthropic
 
 client = Anthropic(
-    api_key="sk-ant-...",                  # your real Anthropic key
+    api_key="fg_your-chosen-key",          # your FuseGuard key (matches SELFHOST_FUSEGUARD_KEY_HASH)
     base_url="http://localhost:8787/v1",   # FuseGuard proxy
 )
-# every call now flows through FuseGuard's budget enforcement
+# FuseGuard authenticates the FG key, enforces your budget, then forwards with your
+# real Anthropic key (SELFHOST_ANTHROPIC_KEY). Your real key never leaves the proxy.
 ```
 
 ## Deploy to Cloudflare (production)
@@ -77,9 +78,25 @@ for the full list. Key ones:
 
 | Variable | Purpose | Secret? |
 | --- | --- | --- |
-| `FG_MASTER_KEY` | 32-byte base64 key — encrypts stored Anthropic keys at rest | **Yes** |
+| `SELFHOST_FUSEGUARD_KEY_HASH` | SHA-256 hex of the FuseGuard key clients must present | **Yes** |
+| `SELFHOST_ANTHROPIC_KEY` | Your Anthropic key the proxy forwards with | **Yes** |
+| `SELFHOST_BUDGET_USD` | Budget ceiling in USD (e.g. `25`). Must be a positive number | **Yes** |
+| `FG_MASTER_KEY` | 32-byte base64 key — encrypts stored keys at rest (Phase 2 DB mode) | Phase 2 |
 | `ANTHROPIC_UPSTREAM` | Upstream host (default `https://api.anthropic.com`) | No |
-| `FAILURE_MODE` | `closed` (block on uncertainty) or `open` (allow). Default `closed` | No |
+| `FAILURE_MODE` | `closed` (block on uncertainty) or `open`. Default `closed` | No |
+
+> **Fail-closed by design:** if the `SELFHOST_*` config is missing, or the presented key
+> doesn't match, the proxy **blocks** the request rather than forwarding unprotected.
+>
+> Set up the single-tenant self-host config:
+> ```bash
+> # 1. Pick a FuseGuard key your clients will send, then hash it:
+> echo -n "fg_your-chosen-key" | sha256sum   # → put the hex in SELFHOST_FUSEGUARD_KEY_HASH
+> # 2. Set the secrets:
+> npx wrangler secret put SELFHOST_FUSEGUARD_KEY_HASH
+> npx wrangler secret put SELFHOST_ANTHROPIC_KEY
+> npx wrangler secret put SELFHOST_BUDGET_USD
+> ```
 
 ### Fail-open vs fail-closed
 Self-hosters who'd rather never break their own app can set `FAILURE_MODE=open` — if the
