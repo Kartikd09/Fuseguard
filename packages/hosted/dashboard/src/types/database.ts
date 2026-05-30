@@ -47,8 +47,8 @@ export interface Budget {
   scope_ref: string | null; // api_key_id or session string; null = all
   limit_type: LimitType;
   limit_value: number;
-  window: BudgetWindow;
-  window_seconds: number | null; // used when window === "rolling"
+  window_type: BudgetWindow;
+  window_seconds: number | null;
   is_active: boolean;
   created_at: string;
 }

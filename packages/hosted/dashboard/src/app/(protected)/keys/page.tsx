@@ -64,6 +64,9 @@ export default async function KeysPage() {
                   <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Status
                   </th>
+                  <th className="text-right px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
