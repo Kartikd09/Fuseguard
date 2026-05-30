@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
 
 export const dynamic = "force-dynamic";
+export const runtime = "edge";
 
 export default async function ProtectedLayout({
   children,

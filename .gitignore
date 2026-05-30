@@ -41,3 +41,6 @@ wrangler.toml.bak
 # TypeScript incremental build artifacts
 *.tsbuildinfo
 supabase/.temp/
+
+# CF Pages adapter output
+packages/hosted/dashboard/.vercel/
