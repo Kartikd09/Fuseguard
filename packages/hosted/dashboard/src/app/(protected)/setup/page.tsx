@@ -54,7 +54,8 @@ function StepBadge({ n }: { n: number | string }) {
 
 export default async function SetupPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const keys = await fetchApiKeys(supabase, orgId);
   const firstKey = keys[0];
 

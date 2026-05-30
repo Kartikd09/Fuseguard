@@ -82,14 +82,10 @@ export async function fetchSubscription(
     .from("subscriptions")
     .select("*, plans(name)")
     .eq("org_id", orgId)
-    .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw new Error(`fetchSubscription: ${error.message}`);
-  }
-  return data as Subscription;
+  if (error) throw new Error(`fetchSubscription: ${error.message}`);
+  return data as Subscription | null;
 }
 
 /** ISO string for N hours ago from now. */

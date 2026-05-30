@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 
 export default async function KeysPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const [keys, budgets] = await Promise.all([
     fetchApiKeys(supabase, orgId),
     fetchBudgets(supabase, orgId),

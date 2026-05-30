@@ -42,7 +42,8 @@ function limitLabel(budget: Budget): string {
 export default async function BudgetsPage({ searchParams }: { searchParams: Promise<{ keyId?: string }> }) {
   const { keyId } = await searchParams;
   const supabase = await createServerSupabaseClient();
-  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
+  const orgId = await resolveActiveOrgId(supabase);
+  if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const [budgets, keys, events] = await Promise.all([
     fetchBudgets(supabase, orgId),
     fetchApiKeys(supabase, orgId),

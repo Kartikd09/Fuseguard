@@ -35,8 +35,8 @@ const PRO_FEATURES = [
 
 export default async function BillingPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = (await resolveActiveOrgId(supabase)) ?? "";
-  const subscription = await fetchSubscription(supabase, orgId);
+  const orgId = await resolveActiveOrgId(supabase);
+  const subscription = orgId ? await fetchSubscription(supabase, orgId) : null;
   let checkoutUrl = LEMON_SQUEEZY_CHECKOUT_URL;
   if (orgId) {
     const u = new URL(LEMON_SQUEEZY_CHECKOUT_URL);
