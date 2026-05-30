@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # Skip gracefully until package.json exists (pre-MVP scaffolding phase)
+      - name: Check for package.json
+        id: pkg
+        run: |
+          if [ -f package.json ]; then echo "exists=true" >> "$GITHUB_OUTPUT";
+          else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install
+        if: steps.pkg.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Lint
+        if: steps.pkg.outputs.exists == 'true'
+        run: npm run lint --if-present
+
+      - name: Typecheck
+        if: steps.pkg.outputs.exists == 'true'
+        run: npm run typecheck --if-present
+
+      - name: Test (with coverage)
+        if: steps.pkg.outputs.exists == 'true'
+        run: npm run test:coverage --if-present
