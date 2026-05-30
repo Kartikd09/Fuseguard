@@ -1,0 +1,8 @@
+FuseGuard — hosted package (@fuseguard/hosted)
+
+PROPRIETARY AND CONFIDENTIAL. NOT covered by the MIT license that applies to
+packages/core. This package is the managed business: billing, team management,
+alerts, and the hosted dashboard (ARCHITECTURE §7).
+
+Copyright (c) FuseGuard. All rights reserved. No license to use, copy, modify,
+or distribute is granted except by a separate written agreement.

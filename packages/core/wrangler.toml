@@ -1,0 +1,49 @@
+name = "fuseguard-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+FAILURE_MODE = "closed"
+
+# DO binding + SQLite migration at top level (used when deploying without --env)
+[[durable_objects.bindings]]
+name = "BudgetDO"
+class_name = "BudgetDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetDO"]
+
+# --- Staging ---
+[env.staging]
+name = "fuseguard-proxy-staging"
+
+[env.staging.vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+FAILURE_MODE = "closed"
+
+[[env.staging.durable_objects.bindings]]
+name = "BudgetDO"
+class_name = "BudgetDO"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetDO"]
+
+# --- Production ---
+[env.production]
+name = "fuseguard-proxy"
+
+[env.production.vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+FAILURE_MODE = "closed"
+
+[[env.production.durable_objects.bindings]]
+name = "BudgetDO"
+class_name = "BudgetDO"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetDO"]
