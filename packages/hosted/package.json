@@ -1,0 +1,12 @@
+{
+  "name": "@fuseguard/hosted",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FuseGuard hosted — PROPRIETARY (NOT MIT). Billing, team, alerts, dashboard.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'dashboard becomes the Next.js app in Phase 2 (ROADMAP) — placeholder' && exit 0",
+    "typecheck": "tsc --build"
+  }
+}

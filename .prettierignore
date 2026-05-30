@@ -1,0 +1,11 @@
+**/dist/**
+**/node_modules/**
+**/*.tsbuildinfo
+**/.wrangler/**
+package-lock.json
+
+# Pre-existing docs/config owned outside the scaffold — do not reformat.
+*.md
+docs/**
+.claude/**
+.github/**
