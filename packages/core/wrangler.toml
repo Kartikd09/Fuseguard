@@ -1,0 +1,35 @@
+name = "fuseguard-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Non-secret vars only. Secrets (FG_MASTER_KEY, SUPABASE_SERVICE_ROLE_KEY,
+# LEMON_SQUEEZY_WEBHOOK_SECRET) are set via `wrangler secret put`, NEVER here.
+[vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+# Default to "closed" (safe) so a deploy that forgets `--env` never ships unprotected.
+# OSS self-hosters who want fail-open set FAILURE_MODE="open" in their own .dev.vars / env.
+FAILURE_MODE = "closed"
+
+# Authoritative per-key / per-session budget counter (ARCHITECTURE §2, §4c).
+[[durable_objects.bindings]]
+name = "BudgetDO"
+class_name = "BudgetDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["BudgetDO"]
+
+# --- Staging (deployed from `develop`) ---
+[env.staging]
+name = "fuseguard-proxy-staging"
+[env.staging.vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+FAILURE_MODE = "closed"
+
+# --- Production (deployed from `main`) ---
+[env.production]
+name = "fuseguard-proxy"
+[env.production.vars]
+ANTHROPIC_UPSTREAM = "https://api.anthropic.com"
+FAILURE_MODE = "closed"

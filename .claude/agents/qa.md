@@ -3,6 +3,8 @@ name: qa
 description: QA and test engineer for FuseGuard. Writes tests-first, hunts edge cases, enforces coverage on the enforcement core. Use for all test work and before merges.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
+memory: project
+color: green
 ---
 
 # QA — FuseGuard

@@ -3,6 +3,8 @@ name: code-reviewer
 description: Quality gate for FuseGuard. Reviews EVERY PR for correctness, readability, standards, and maintainability before merge. Use after implementation, before merge.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+memory: project
+color: purple
 ---
 
 # Code Reviewer — FuseGuard
