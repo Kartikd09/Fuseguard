@@ -18,6 +18,10 @@ export const PRICING: Record<string, ModelPrice> = {
 
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
 
+// Anthropic cache pricing, relative to the model's input rate (ARCHITECTURE §3).
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
 // Unknown model ⇒ fail-closed: price as the most-expensive known model (ARCHITECTURE §3).
 // Throws if the table is empty — returning 0 would silently un-fail-closed (charge nothing).
 function mostExpensive(kind: PriceKind): number {
@@ -39,15 +43,23 @@ export function usdPerToken(model: string, kind: PriceKind): number {
 }
 
 /**
- * Authoritative post-flight cost in USD. TODO(ROADMAP Phase 1, task 1): implement cache
- * read/write multipliers (write ≈ 1.25×, read ≈ 0.1× of input) and full reconciliation.
+ * Authoritative USD cost for a usage breakdown. Cache write/read are priced as multiples of the
+ * model's input rate (write 1.25×, read 0.1×). Unknown model fails closed via usdPerToken.
+ * Pure — safe for unit testing.
  */
 export function cost(
-  _model: string,
-  _inputTokens: number,
-  _outputTokens: number,
-  _cacheReadTokens = 0,
-  _cacheWriteTokens = 0
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0
 ): number {
-  throw new Error("cost() not implemented — see ROADMAP Phase 1 task 1");
+  const inputRate = usdPerToken(model, "input");
+  const outputRate = usdPerToken(model, "output");
+  return (
+    inputTokens * inputRate +
+    outputTokens * outputRate +
+    cacheReadTokens * inputRate * CACHE_READ_MULTIPLIER +
+    cacheWriteTokens * inputRate * CACHE_WRITE_MULTIPLIER
+  );
 }
