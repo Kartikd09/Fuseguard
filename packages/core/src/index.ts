@@ -36,8 +36,7 @@ async function sbGet<T>(env: Env, table: string, query: string): Promise<T[]> {
 }
 
 async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
-  // Best-effort write — never block the hot path.
-  await fetch(`${env.SUPABASE_URL}/rest/v1/${table}`, {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -47,11 +46,15 @@ async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
     },
     body: JSON.stringify(body),
   });
+  // Log failures server-side so dropped telemetry is observable. Never log body (contains cost metadata only, no secrets).
+  if (!res.ok) {
+    console.error(`[fuseguard:ingest] ${table} insert failed: ${res.status}`);
+  }
 }
 
 // Supabase REST returns bytea columns as \xHEX where the bytes are the UTF-8 encoding
 // of the original stored string (base64). Decode hex → UTF-8 string to get the base64 back.
-function hexToBase64(s: string): string {
+export function hexToBase64(s: string): string {
   if (!s.startsWith("\\x")) return s; // already a plain string / base64
   const hex = s.slice(2);
   let str = "";
@@ -68,7 +71,6 @@ function getDO(namespace: DurableObjectNamespace, scopeKey: string): BudgetDO {
 }
 
 // ── Self-host fallback (no Supabase) ─────────────────────────────────────────────────────────
-// Kept for OSS self-hosters who set SELFHOST_* env vars instead of Supabase.
 
 export interface SelfhostConfig {
   readonly SELFHOST_FUSEGUARD_KEY_HASH?: string;
@@ -104,7 +106,12 @@ interface BudgetRow {
   limit_value: number;
 }
 
-async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<KeyLookupResult | null> {
+// KeyLookupResult extended to carry keyId for event emission — avoids a second DB round-trip.
+interface LookupResult extends KeyLookupResult {
+  keyId: string;
+}
+
+async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupResult | null> {
   const rows = await sbGet<ApiKeyRow>(
     env,
     "api_keys",
@@ -113,51 +120,58 @@ async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<KeyLook
   if (rows.length === 0) return null;
   const row = rows[0]!;
 
-  const anthropicKey = await decryptKey(
-    hexToBase64(row.anthropic_key_ciphertext),
-    hexToBase64(row.anthropic_key_iv),
-    env.FG_MASTER_KEY
-  );
+  let anthropicKey: string;
+  try {
+    anthropicKey = await decryptKey(
+      hexToBase64(row.anthropic_key_ciphertext),
+      hexToBase64(row.anthropic_key_iv),
+      env.FG_MASTER_KEY
+    );
+  } catch (err) {
+    // Emit structured error (no plaintext/ciphertext) so key-rotation breakage is observable.
+    console.error(`[fuseguard:crypto] decryptKey failed for key ${row.id}: ${String(err)}`);
+    throw err; // re-throw so caller applies failure policy
+  }
 
   const budgets = await sbGet<BudgetRow>(
     env,
     "budgets",
-    `org_id=eq.${row.org_id}&is_active=eq.true&limit_type=eq.usd&select=id,scope,scope_ref,limit_value&limit=20`
+    // order: key-specific budgets first (scope_ref not null) so find() prefers them over org-wide
+    `org_id=eq.${row.org_id}&is_active=eq.true&limit_type=eq.usd&select=id,scope,scope_ref,limit_value&order=scope_ref.desc.nullslast&limit=20`
   );
 
-  const keyBudget = budgets.find(
-    (b) => b.scope === "key" && (b.scope_ref === row.id || b.scope_ref === null)
-  );
+  // Prefer key-specific budget (scope_ref === row.id) over org-wide (scope_ref === null).
+  const keyBudget =
+    budgets.find((b) => b.scope === "key" && b.scope_ref === row.id) ??
+    budgets.find((b) => b.scope === "key" && b.scope_ref === null);
   const limitUsd = keyBudget?.limit_value ?? Infinity;
 
   const keyDO = getDO(env.BudgetDO, `budget:key:${row.id}`);
 
-  // Init the DO limit (idempotent — DO ignores if already set to same value).
+  // Init the DO limit (idempotent).
   await keyDO.fetch(new Request("https://do/init", {
     method: "POST",
     body: JSON.stringify({ limitUsd }),
     headers: { "content-type": "application/json" },
   }));
 
-  return { orgId: row.org_id, anthropicKey, limitUsd, keyDO, sessionDO: null };
+  return { orgId: row.org_id, anthropicKey, limitUsd, keyDO, sessionDO: null, keyId: row.id };
 }
 
-async function lookupKey(keyHash: string, env: Env): Promise<KeyLookupResult | null> {
-  // Hosted path: Supabase configured.
+async function lookupKey(keyHash: string, env: Env): Promise<LookupResult | null> {
   if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.FG_MASTER_KEY) {
     return lookupKeyFromSupabase(keyHash, env);
   }
-  // Self-host fallback.
   const resolved = resolveSelfhostKey(keyHash, env);
   if (resolved === null) return null;
-  return { ...resolved, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null };
+  // Self-host has no DB key id — use hash prefix as a stable identifier.
+  return { ...resolved, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null, keyId: keyHash.slice(0, 36) };
 }
 
 // ── Event emitter → Supabase usage_events + blocks (off hot path) ────────────────────────────
 
 type EmitPayload = { type: string; orgId?: string; [k: string]: unknown };
 
-// keyId is captured by the worker per-request after lookupKey resolves.
 function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void {
   return (event: unknown) => {
     const e = event as EmitPayload;
@@ -201,7 +215,7 @@ export default {
       return Response.json({ status: "ok" });
     }
 
-    // Per-request key id captured after lookup for event emission.
+    // keyId threaded synchronously from lookupKey — no second DB round-trip, no race.
     let resolvedKeyId: string | undefined;
 
     const proxyEnv: ProxyEnv = {
@@ -209,14 +223,9 @@ export default {
       upstreamFetch: fetch,
       lookupKey: async (keyHash: string) => {
         const result = await lookupKey(keyHash, env);
-        if (result && env.SUPABASE_URL) {
-          sbGet<{ id: string }>(env, "api_keys", `fuseguard_key_hash=eq.${encodeURIComponent(keyHash)}&select=id&limit=1`)
-            .then((rows) => { resolvedKeyId = rows[0]?.id; })
-            .catch(() => undefined);
-        }
-        return result;
+        if (result) resolvedKeyId = result.keyId; // set synchronously before pipeline runs
+        return result; // KeyLookupResult (extra keyId field ignored by proxy handler)
       },
-      // Closure over resolvedKeyId so each event emission uses the current value.
       emitEvent: (e: unknown) => makeEmitter(env, resolvedKeyId)(e),
     };
 

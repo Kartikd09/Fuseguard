@@ -16,6 +16,7 @@ import StatCard from "@/components/ui/StatCard";
 import BudgetBar from "@/components/ui/BudgetBar";
 import EmptyState from "@/components/ui/EmptyState";
 import DashboardPoller from "./DashboardPoller";
+import RangeSelector from "./RangeSelector";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,21 +34,35 @@ export const metadata: Metadata = { title: "Overview — FuseGuard" };
 // Force dynamic — reads from Supabase auth + live data; cannot be statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+const RANGE_CONFIG = {
+  "24h": { hours: 24,  label: "last 24h" },
+  "7d":  { hours: 168, label: "last 7 days" },
+  "30d": { hours: 720, label: "last 30 days" },
+} as const;
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range: rawRange } = await searchParams;
+  const range = (rawRange && rawRange in RANGE_CONFIG ? rawRange : "24h") as keyof typeof RANGE_CONFIG;
+  const { hours, label } = RANGE_CONFIG[range];
+
   const supabase = await createServerSupabaseClient();
-  const since24h = hoursAgoIso(24);
+  const since = hoursAgoIso(hours);
 
   const [keys, budgets, events, blocks] = await Promise.all([
     fetchApiKeys(supabase),
     fetchBudgets(supabase),
-    fetchUsageEvents(supabase, since24h),
-    fetchBlocks(supabase, since24h),
+    fetchUsageEvents(supabase, since),
+    fetchBlocks(supabase, since),
   ]);
 
-  const summary = buildSpendSummary(events, blocks, "last 24h");
+  const summary = buildSpendSummary(events, blocks, label);
   const keySpend = buildKeySpend(keys, events, blocks, budgets);
   const topSpenders = buildTopSpenders(keySpend, 5);
-  const hourly = buildHourlySpend(events, blocks, 24, new Date().toISOString());
+  const hourly = buildHourlySpend(events, blocks, hours, new Date().toISOString());
 
   const hasActivity = events.length > 0 || blocks.length > 0;
   const hasFirstBlock = blocks.length > 0;
@@ -59,36 +74,39 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Overview</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Last 24 hours</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{label}</p>
         </div>
-        <DashboardPoller />
+        <div className="flex items-center gap-3">
+          <RangeSelector current={range} />
+          <DashboardPoller />
+        </div>
       </div>
 
       {/* First-block celebration moment */}
       {hasFirstBlock && (
         <div
           role="status"
-          className="rounded-xl border border-emerald-700/50 bg-emerald-950/30 dark:bg-emerald-900/10 px-5 py-4 flex items-start gap-3"
+          className="rounded-xl border border-emerald-600/40 bg-emerald-50 dark:bg-emerald-950/30 px-5 py-4 flex items-start gap-3"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
-            <ShieldOff className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+            <ShieldOff className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           </div>
           <div>
-            <p className="font-semibold text-emerald-300">
+            <p className="font-semibold text-emerald-800 dark:text-emerald-300">
               FuseGuard just earned its keep
               {savedUsd > 0 && (
-                <span className="ml-2 text-emerald-400/90 font-normal">
+                <span className="ml-2 text-emerald-700 dark:text-emerald-400/90 font-normal">
                   — saved ~{formatUsd(savedUsd)}
                 </span>
               )}
             </p>
-            <p className="text-sm text-emerald-400/70 mt-0.5">
+            <p className="text-sm text-emerald-700/80 dark:text-emerald-400/70 mt-0.5">
               {blocks.length} call{blocks.length !== 1 ? "s" : ""} blocked before breaching your
               budget.{" "}
-              <strong className="font-medium text-emerald-300/80">That&apos;s the whole product.</strong>
+              <strong className="font-medium text-emerald-700 dark:text-emerald-300/80">That&apos;s the whole product.</strong>
             </p>
           </div>
         </div>
@@ -97,13 +115,13 @@ export default async function DashboardPage() {
       {/* KPI Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          label="Total spend (24h)"
+          label={`Total spend (${range})`}
           value={formatUsd(summary.totalUsd)}
           sub={summary.windowLabel}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
-          label="Blocked calls (24h)"
+          label={`Blocked calls (${range})`}
           value={summary.blockedCount.toLocaleString()}
           variant={summary.blockedCount > 0 ? "danger" : "default"}
           sub={summary.blockedCount > 0 ? "pre-flight enforcements" : "none yet"}
@@ -121,7 +139,7 @@ export default async function DashboardPage() {
       {hasActivity && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Spend &amp; blocks — last 24h</CardTitle>
+            <CardTitle className="text-base">Spend &amp; blocks — {label}</CardTitle>
           </CardHeader>
           <CardContent>
             <SpendChart data={hourly} height={240} />
@@ -156,7 +174,7 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader className="pb-4">
               <CardTitle id="top-spenders-heading" className="text-base">
-                Top spenders (24h)
+                Top spenders ({range})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -171,7 +189,7 @@ export default async function DashboardPage() {
                       {formatUsd(ts.spentUsd)}
                     </span>
                   </div>
-                  <BudgetBar percent={ts.percentOfTotal} label="% of total" />
+                  <BudgetBar percent={ts.percentOfTotal} label="share of total spend" />
                 </div>
               ))}
             </CardContent>

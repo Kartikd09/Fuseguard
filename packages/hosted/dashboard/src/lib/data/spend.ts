@@ -34,14 +34,10 @@ export function buildKeySpend(
     const keyBlocks = blocks.filter((b) => b.api_key_id === key.id);
     const spentUsd = keyEvents.reduce((sum, e) => sum + e.cost_usd, 0);
 
-    // Find the most specific active USD budget for this key
-    const keyBudget = budgets.find(
-      (b) =>
-        b.is_active &&
-        b.scope === "key" &&
-        b.scope_ref === key.id &&
-        b.limit_type === "usd"
-    );
+    // Prefer key-specific budget, fall back to org-wide (scope_ref === null)
+    const keyBudget =
+      budgets.find((b) => b.is_active && b.scope === "key" && b.scope_ref === key.id && b.limit_type === "usd") ??
+      budgets.find((b) => b.is_active && b.scope === "key" && b.scope_ref === null && b.limit_type === "usd");
 
     const budgetUsd = keyBudget ? keyBudget.limit_value : null;
     const budgetPercent =
