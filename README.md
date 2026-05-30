@@ -29,9 +29,30 @@ A drop-in proxy between your app and the LLM provider (Anthropic Claude first):
 
 Change one line — your Anthropic `base_url` — and you're protected.
 
+```python
+from anthropic import Anthropic
+
+client = Anthropic(
+    api_key="sk-ant-...",
+    base_url="http://localhost:8787/v1",          # ← point at FuseGuard
+    default_headers={"x-fuseguard-key": "fg_..."},
+)
+# Over budget? You get a 402 instead of a $47k bill.
+```
+
+More: [`examples/`](./examples) (raw SDK · CrewAI · curl).
+
+## Run it yourself (your key never leaves your infra)
+
+FuseGuard's proxy is MIT-licensed. **Self-host it on your own Cloudflare** — the code that
+holds your API key is open and runs where you control it. See
+**[Self-Hosting guide](./docs/SELF_HOSTING.md)**.
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Kartikd09/Fuseguard)
+
 ## Open-Core
 
-- **Free & open source (MIT):** the proxy core + self-host
+- **Free & open source (MIT):** the proxy core + self-host (full enforcement engine)
 - **Paid hosted ($19/mo):** managed dashboard, unlimited keys, team, alerts, loop detection
 
 ## Status

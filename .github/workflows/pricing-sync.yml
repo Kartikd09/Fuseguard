@@ -1,0 +1,54 @@
+name: Pricing Sync Check
+
+# Guards against silently charging wrong amounts if Anthropic changes its rates.
+# Weekly (and manual) check that flags drift between our hardcoded pricing table and a
+# reference. Does NOT auto-edit pricing — it opens an issue for human review.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-pricing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pricing table freshness
+        id: check
+        run: |
+          PRICING_FILE="packages/core/src/pricing.ts"
+          if [ ! -f "$PRICING_FILE" ]; then
+            echo "Pricing file not found yet (pre-implementation) — skipping."
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Surface the current table + last-edit age for human review.
+          # (Anthropic has no public pricing API; this is a review prompt, not an auto-diff.)
+          LAST_EDIT=$(git log -1 --format=%cd --date=short -- "$PRICING_FILE")
+          echo "Pricing table last edited: $LAST_EDIT"
+          echo "last_edit=$LAST_EDIT" >> "$GITHUB_OUTPUT"
+          echo "drift=review" >> "$GITHUB_OUTPUT"
+
+      - name: Open review issue
+        if: steps.check.outputs.drift == 'review'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAST_EDIT: ${{ steps.check.outputs.last_edit }}
+        run: |
+          TITLE="Verify pricing table against current Anthropic rates"
+          # Avoid duplicate open issues
+          EXISTING=$(gh issue list --search "$TITLE in:title state:open" --json number --jq 'length')
+          if [ "$EXISTING" != "0" ]; then
+            echo "Review issue already open — skipping."
+            exit 0
+          fi
+          gh issue create \
+            --title "$TITLE" \
+            --label "pricing,maintenance" \
+            --body "Weekly check. \`packages/core/src/pricing.ts\` last edited **$LAST_EDIT**. Confirm input/output (and cache-multiplier) rates still match Anthropic's published pricing. If they changed, update the table — billing accuracy depends on it."
