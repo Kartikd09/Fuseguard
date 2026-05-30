@@ -1,0 +1,41 @@
+name: Dashboard CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "packages/hosted/dashboard/**"
+      - ".github/workflows/dashboard.yml"
+  push:
+    branches: [develop, main]
+    paths:
+      - "packages/hosted/dashboard/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/hosted/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install (workspace root)
+        working-directory: .
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Test
+        run: npx vitest run
+      - name: Build
+        run: npm run build
+      # NOTE: Next ESLint config not yet wired; `next lint` step added once configured.
