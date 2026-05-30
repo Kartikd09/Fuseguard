@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 import { resolveActiveOrgId } from "@/lib/data/queries";
+import { rateLimit } from "@/lib/rate-limit";
 
 interface CreateBudgetBody {
   scope: BudgetScope;
@@ -39,6 +40,12 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: 20 budget writes per minute per user.
+  const rl = rateLimit(`budgets:${user.id}`, 20, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
   }
 
   let body: unknown;
