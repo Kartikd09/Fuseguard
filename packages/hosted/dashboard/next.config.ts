@@ -11,8 +11,6 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Workspace root for output file tracing
-  outputFileTracingRoot: require("path").join(__dirname, "../../.."),
   // Defense-in-depth security headers (users paste a live Anthropic secret here).
   async headers() {
     return [

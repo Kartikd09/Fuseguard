@@ -5,6 +5,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 
+export const runtime = "edge";
+
 interface UpdateBudgetBody {
   scope?: BudgetScope;
   scope_ref?: string | null;
