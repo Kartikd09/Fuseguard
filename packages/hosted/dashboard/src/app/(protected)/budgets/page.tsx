@@ -149,12 +149,20 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
         <CardContent className="py-4">
           <div className="flex items-start gap-3 text-sm text-muted-foreground">
             <Info className="h-4 w-4 mt-0.5 shrink-0" />
-            <p>
-              <strong className="text-foreground">How it works:</strong> FuseGuard estimates
-              worst-case cost before each call (input tokens + max_tokens × output price). If that
-              projection breaches the ceiling, the call is blocked with HTTP 402 —{" "}
-              <em>before</em> it reaches Anthropic.
-            </p>
+            <div className="space-y-2">
+              <p>
+                <strong className="text-foreground">How it works:</strong> Before each call FuseGuard
+                reserves the <em>worst-case</em> cost (input tokens + <code className="fg-code">max_tokens</code> ×
+                output price). If that reservation would breach your ceiling, the call is blocked with
+                HTTP 402 — <em>before</em> it reaches Anthropic. You never over-spend.
+              </p>
+              <p>
+                After each call completes, the unused portion of the reservation is{" "}
+                <strong className="text-foreground">released</strong> — so your budget tracks{" "}
+                <em>real</em> spend, not the estimate. Tip: set <code className="fg-code">max_tokens</code> close
+                to your expected output to avoid early blocks from inflated reservations.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
