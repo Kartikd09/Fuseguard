@@ -5,10 +5,14 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApiKey, Budget, UsageEvent, Block, Subscription } from "@/types";
-import { resolveActiveOrgId } from "./org-context";
+import { resolveActiveOrgId, fetchUserOrgs } from "./org-context";
+export type { OrgOption } from "./org-context";
 
 /** Resolve the active org ID for the current user. Single source of truth. */
 export { resolveActiveOrgId };
+
+/** Fetch all orgs the user belongs to — used by the org switcher UI. */
+export { fetchUserOrgs };
 
 /** Fetch all active API keys for the org. */
 export async function fetchApiKeys(supabase: SupabaseClient, orgId: string): Promise<ApiKey[]> {

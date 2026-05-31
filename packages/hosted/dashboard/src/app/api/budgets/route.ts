@@ -1,12 +1,12 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // POST /api/budgets — create a new budget.
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-export const runtime = "edge";
 
 interface CreateBudgetBody {
   scope: BudgetScope;
@@ -75,7 +75,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) {
     return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }

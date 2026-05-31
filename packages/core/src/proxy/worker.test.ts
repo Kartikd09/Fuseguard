@@ -890,6 +890,93 @@ describe("Integration: end-to-end proxy flow", () => {
   });
 });
 
+// ── C1: Session budgets wired from index.ts ───────────────────────────────────────────────────
+// These tests ensure the proxy handler correctly activates sessionDO when provided via
+// lookupKey, matching real wiring in index.ts. Previously sessionDO was hardcoded null.
+describe("C1 — session budget wired (not null)", () => {
+  it("session budget blocks when sessionDO is provided and exhausted", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const keyDO = makeBudgetDO(10);
+    await initialiseDO(keyDO, 10);
+    const sessionDO = makeBudgetDO(0); // exhausted
+    await initialiseDO(sessionDO, 0);
+
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 10,
+      hasBudget: true,
+      keyDO,
+      sessionDO,
+    });
+
+    const handler = createProxyHandler();
+    const res = await handler(
+      makeRequest(BASE_MESSAGES_BODY, { "x-fuseguard-session": "sess-abc" }),
+      env
+    );
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: { type: string; scope: string } };
+    expect(body.error.type).toBe("budget_exceeded");
+    expect(body.error.scope).toBe("session");
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("both key and session enforced: lower budget wins (session blocks even with key remaining)", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const keyDO = makeBudgetDO(100);
+    await initialiseDO(keyDO, 100);
+    const sessionDO = makeBudgetDO(0); // zero session budget
+    await initialiseDO(sessionDO, 0);
+
+    const { env } = await buildEnv({ limitUsd: 100.0, upstreamFetch });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 100,
+      hasBudget: true,
+      keyDO,
+      sessionDO,
+    });
+
+    const handler = createProxyHandler();
+    const res = await handler(
+      makeRequest(BASE_MESSAGES_BODY, { "x-fuseguard-session": "sess-zero" }),
+      env
+    );
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as { error: { type: string; scope: string } };
+    expect(body.error.scope).toBe("session");
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
+  it("no sessionId header → sessionDO not activated, call proceeds on key budget alone", async () => {
+    const upstreamFetch = makeUpstreamFetch(VALID_ANTHROPIC_RESPONSE);
+    const keyDO = makeBudgetDO(10);
+    await initialiseDO(keyDO, 10);
+    const sessionDO = makeBudgetDO(0); // would block if activated
+    await initialiseDO(sessionDO, 0);
+
+    const { env } = await buildEnv({ limitUsd: 10.0, upstreamFetch });
+    env.lookupKey = async () => ({
+      orgId: "org-1",
+      anthropicKey: "sk-ant-real",
+      limitUsd: 10,
+      hasBudget: true,
+      keyDO,
+      sessionDO, // present but no header → should NOT activate
+    });
+
+    const handler = createProxyHandler();
+    // No x-fuseguard-session header
+    const res = await handler(makeRequest(BASE_MESSAGES_BODY), env);
+    // Session budget should NOT be enforced — call proceeds on key budget alone.
+    expect(res.status).toBe(200);
+    expect(upstreamFetch).toHaveBeenCalledOnce();
+  });
+});
+
 // ── Task 11: Loop detection wired into Worker ──────────────────────────────────────────────────
 describe("Loop detection in Worker (Task 11)", () => {
   it("blocks with 402 loop_detected after ≥10 identical requests", async () => {

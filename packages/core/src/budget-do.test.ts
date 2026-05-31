@@ -280,6 +280,77 @@ describe("BudgetDO — concurrency (DO serial guarantee simulated)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+// C2 / H3: Reservation TTL — stale reservation self-heals, fresh one counts
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("BudgetDO — reservation TTL (C2/H3)", () => {
+  it("stale reservation (> TTL) is excluded from totalReserved so new calls are not blocked", async () => {
+    // Inject a stale reservation by direct internal manipulation via reserve + mock Date.now.
+    // Strategy: reserve while time is T-0, then advance virtual clock past TTL, then reserve again.
+    // To keep the test hermetic we manipulate the createdAt via a workaround:
+    // we set the DO storage directly with a stale reservation record.
+    const fakeState = new FakeState();
+    const env = { ANTHROPIC_UPSTREAM: "https://api.anthropic.com", FAILURE_MODE: "closed" as const };
+    const do_ = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+    await doInit(do_, 1.0);
+
+    // Inject a stale reservation directly into storage (simulates a crash mid-flight).
+    const RESERVATION_TTL_MS = 10 * 60 * 1000; // must match budget-do.ts constant
+    const staleCreatedAt = Date.now() - RESERVATION_TTL_MS - 1000; // 1 second past TTL
+    const staleState = {
+      limitUsd: 1.0,
+      spentUsd: 0,
+      reservations: {
+        "stale-id-001": { estCost: 0.9, reconciled: false, createdAt: staleCreatedAt },
+      },
+    };
+    await fakeState.storage.put("budget", staleState);
+
+    // Create a new instance on the same storage to force fresh hydration.
+    const do2 = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+
+    // The stale reservation held 0.9 of the 1.0 limit. If NOT pruned, a 0.2 reserve would block.
+    // If pruned (TTL expired), the 0.2 reserve should succeed.
+    const result = await doReserve(do2, 0.2);
+    expect(result.blocked).toBe(false);
+    expect(result.reservationId).toBeDefined();
+  });
+
+  it("fresh reservation (< TTL) is counted and blocks when limit would be exceeded", async () => {
+    const do_ = await makeInitialisedDO(0.5);
+    // Reserve 0.4 (fresh — just created)
+    const r = await doReserve(do_, 0.4);
+    expect(r.blocked).toBe(false);
+    // A second 0.4 would total 0.8 > 0.5 limit — must block.
+    const r2 = await doReserve(do_, 0.4);
+    expect(r2.blocked).toBe(true);
+  });
+
+  it("prunes stale reservations from storage on reserve so the map stays bounded (F9)", async () => {
+    const fakeState = new FakeState();
+    const env = { ANTHROPIC_UPSTREAM: "https://api.anthropic.com", FAILURE_MODE: "closed" as const };
+    const do_ = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+    await doInit(do_, 1.0);
+
+    const RESERVATION_TTL_MS = 10 * 60 * 1000;
+    const staleCreatedAt = Date.now() - RESERVATION_TTL_MS - 1000;
+    await fakeState.storage.put("budget", {
+      limitUsd: 1.0,
+      spentUsd: 0,
+      reservations: { "stale-id-001": { estCost: 0.9, reconciled: false, createdAt: staleCreatedAt } },
+    });
+
+    const do2 = new BudgetDO(fakeState as unknown as DurableObjectState, env);
+    await doReserve(do2, 0.2);
+
+    const persisted = (await fakeState.storage.get("budget")) as {
+      reservations: Record<string, unknown>;
+    };
+    expect(persisted.reservations["stale-id-001"]).toBeUndefined();
+    expect(Object.keys(persisted.reservations)).toHaveLength(1); // only the new fresh one
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 // Task 11: Loop detection via DO
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 describe("BudgetDO — loop detection", () => {

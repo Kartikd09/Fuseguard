@@ -1,6 +1,7 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // Setup / Onboarding page — proxy URL, x-api-key instructions, cURL snippet.
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchApiKeys, resolveActiveOrgId } from "@/lib/data/queries";
 import CopyButton from "@/components/ui/CopyButton";
@@ -12,7 +13,6 @@ import { KeyRound, Plug, ArrowRight, AlertTriangle } from "lucide-react";
 
 export const metadata: Metadata = { title: "Setup — FuseGuard" };
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 const PROXY_BASE_URL = process.env["NEXT_PUBLIC_SUPABASE_URL"]
   ? "https://proxy.fuseguard.app"
@@ -55,7 +55,9 @@ function StepBadge({ n }: { n: number | string }) {
 
 export default async function SetupPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const keys = await fetchApiKeys(supabase, orgId);
   const firstKey = keys[0];

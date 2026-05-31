@@ -6,7 +6,6 @@ import { Zap } from "lucide-react";
 
 // Force dynamic rendering — this page checks auth state server-side.
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 export const metadata: Metadata = {
   title: "Sign in — FuseGuard",

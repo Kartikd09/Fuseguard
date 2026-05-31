@@ -1,16 +1,14 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+// Enable OpenNext Cloudflare bindings (KV, DO, etc.) in `next dev`
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
-  // Cloudflare Pages adapter: use edge runtime where needed
-  // Full CF Pages deploy needs @cloudflare/next-on-pages; for MVP we build standard Next.js
-  // and note CF Pages deploy instructions separately.
   reactStrictMode: true,
   // Disable x-powered-by header
   poweredByHeader: false,
-  // Skip ESLint during CI build — run it separately with npm run lint
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Next 16 dropped the `eslint` config key; lint runs separately via `npm run lint`.
   // Defense-in-depth security headers (users paste a live Anthropic secret here).
   async headers() {
     return [

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Zap, ShieldOff, Check, X, Code2, ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 const GITHUB_URL = "https://github.com/Kartikd09/Fuseguard";
 

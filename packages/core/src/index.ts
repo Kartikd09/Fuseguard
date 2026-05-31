@@ -1,12 +1,12 @@
 // FuseGuard proxy Worker entry point. MIT/OSS (ARCHITECTURE §2, §7).
 // GET /health → 200; /v1/messages → enforcement pipeline (FR-1..FR-4).
 
-import { createProxyHandler } from "./proxy/worker.js";
+import { createProxyHandler, SESSION_ID_PATTERN } from "./proxy/worker.js";
 import type { ProxyEnv, KeyLookupResult } from "./proxy/worker.js";
 import { BudgetDO } from "./budget-do.js";
 import { decryptKey } from "./crypto/index.js";
 import { safeEqual } from "./auth.js";
-import { isHandledEvent, mapLsStatus, verifyLsSignature, isStaleEvent } from "./lemon-squeezy.js";
+import { isHandledEvent, isGracePeriodStatus, mapLsStatus, verifyLsSignature } from "./lemon-squeezy.js";
 export { BudgetDO } from "./budget-do.js";
 
 export interface Env {
@@ -53,21 +53,6 @@ async function sbInsert(env: Env, table: string, body: unknown): Promise<void> {
   if (!res.ok) {
     console.error(`[fuseguard:ingest] ${table} insert failed: ${res.status}`);
   }
-}
-
-async function sbUpsert(env: Env, table: string, onConflict: string, body: unknown): Promise<void> {
-  // on_conflict must be a query param, not a header (PostgREST spec).
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
-    method: "POST",
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=minimal",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) console.error(`[fuseguard:ingest] ${table} upsert failed: ${res.status}`);
 }
 
 // Supabase REST returns bytea columns as \xHEX where the bytes are the UTF-8 encoding
@@ -125,11 +110,24 @@ interface BudgetRow {
 }
 
 // KeyLookupResult extended to carry keyId for event emission — avoids a second DB round-trip.
+// H1 FIX: keyId is null for the self-host path (no valid UUID available).
 interface LookupResult extends KeyLookupResult {
-  keyId: string;
+  keyId: string | null;
 }
 
-async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupResult | null> {
+async function initDO(doInstance: BudgetDO, limitUsd: number): Promise<void> {
+  await doInstance.fetch(new Request("https://do/init", {
+    method: "POST",
+    body: JSON.stringify({ limitUsd }),
+    headers: { "content-type": "application/json" },
+  }));
+}
+
+async function lookupKeyFromSupabase(
+  keyHash: string,
+  env: Env,
+  sessionId: string | null
+): Promise<LookupResult | null> {
   const rows = await sbGet<ApiKeyRow>(
     env,
     "api_keys",
@@ -170,39 +168,50 @@ async function lookupKeyFromSupabase(keyHash: string, env: Env): Promise<LookupR
   const limitUsd = keyBudget?.limit_value ?? 0;
 
   const keyDO = getDO(env.BudgetDO, `budget:key:${row.id}`);
+  await initDO(keyDO, limitUsd);
 
-  // Init the DO limit (idempotent).
-  await keyDO.fetch(new Request("https://do/init", {
-    method: "POST",
-    body: JSON.stringify({ limitUsd }),
-    headers: { "content-type": "application/json" },
-  }));
+  // C1 FIX: resolve sessionDO only when a validated sessionId is present AND a session-scoped
+  // budget exists for this org. Without both conditions, enforcement is a silent no-op.
+  let sessionDO: BudgetDO | null = null;
+  if (sessionId != null) {
+    const sessionBudget = budgets.find((b) => b.scope === "session");
+    if (sessionBudget != null) {
+      sessionDO = getDO(env.BudgetDO, `budget:session:${row.org_id}:${sessionId}`);
+      await initDO(sessionDO, sessionBudget.limit_value);
+    }
+  }
 
-  return { orgId: row.org_id, anthropicKey, limitUsd, hasBudget, keyDO, sessionDO: null, keyId: row.id };
+  return { orgId: row.org_id, anthropicKey, limitUsd, hasBudget, keyDO, sessionDO, keyId: row.id };
 }
 
-async function lookupKey(keyHash: string, env: Env): Promise<LookupResult | null> {
+async function lookupKey(
+  keyHash: string,
+  env: Env,
+  sessionId: string | null
+): Promise<LookupResult | null> {
   if (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.FG_MASTER_KEY) {
-    return lookupKeyFromSupabase(keyHash, env);
+    return lookupKeyFromSupabase(keyHash, env, sessionId);
   }
   const resolved = resolveSelfhostKey(keyHash, env);
   if (resolved === null) return null;
   // Self-host always has a budget (SELFHOST_BUDGET_USD validated in resolveSelfhostKey).
-  return { ...resolved, hasBudget: true, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null, keyId: keyHash.slice(0, 36) };
+  // H1 FIX: keyId null for self-host — keyHash.slice(0,36) is not a valid UUID,
+  // so usage_events FK insert fails silently. Pass null so makeEmitter omits api_key_id.
+  return { ...resolved, hasBudget: true, keyDO: getDO(env.BudgetDO, `budget:key:${keyHash}`), sessionDO: null, keyId: null };
 }
 
 // ── Event emitter → Supabase usage_events + blocks (off hot path) ────────────────────────────
 
 type EmitPayload = { type: string; orgId?: string; [k: string]: unknown };
 
-function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void {
+export function makeEmitter(env: Env, keyId: string | null | undefined): (e: unknown) => void {
   return (event: unknown) => {
     const e = event as EmitPayload;
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return;
     if (e.type === "usage" && e.orgId) {
-      void sbInsert(env, "usage_events", {
+      // H1 FIX: omit api_key_id when null (self-host path) to avoid FK violation on usage_events.
+      const usagePayload: Record<string, unknown> = {
         org_id: e.orgId,
-        api_key_id: keyId,
         model: e["model"],
         input_tokens: e["inputTokens"] ?? 0,
         output_tokens: e["outputTokens"] ?? 0,
@@ -212,18 +221,22 @@ function makeEmitter(env: Env, keyId: string | undefined): (e: unknown) => void 
         status: "ok",
         request_hash: "",
         ts: new Date().toISOString(),
-      });
+      };
+      if (keyId != null) usagePayload["api_key_id"] = keyId;
+      void sbInsert(env, "usage_events", usagePayload);
     }
     if (e.type === "block" && e.orgId) {
-      void sbInsert(env, "blocks", {
+      // H1 FIX: omit api_key_id when null for same FK-safety reason.
+      const blockPayload: Record<string, unknown> = {
         org_id: e.orgId,
-        api_key_id: keyId,
         reason: e["reason"] ?? "budget_exceeded",
         scope: e["scope"] ?? "key",
         projected_usd: e["projected"] ?? 0,
         current_usd: e["currentSpend"] ?? 0,
         ts: new Date().toISOString(),
-      });
+      };
+      if (keyId != null) blockPayload["api_key_id"] = keyId;
+      void sbInsert(env, "blocks", blockPayload);
     }
   };
 }
@@ -302,46 +315,36 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   }
 
-  const planId = status === "active" ? proPlanId : freePlanId;
+  // H4 FIX: paused/past_due is a grace period — keep Pro plan, do NOT drop to free.
+  // Only cancelled/expired status (mapped to "cancelled") causes a downgrade.
+  const planId = isGracePeriodStatus(status) ? proPlanId : freePlanId;
 
-  // Replay guard: a valid HMAC is valid forever, so a replayed stale subscription_cancelled
-  // could downgrade an active sub. Skip events not newer than the last processed one.
-  // NOTE: read-then-write is non-atomic (TOCTOU window remains under concurrent LS retries);
-  // a DB-side conditional write is the post-launch hardening. See isStaleEvent for semantics.
-  const existing = await sbGet<{ updated_at: string }>(
-    env, "subscriptions", `org_id=eq.${encodeURIComponent(orgId)}&select=updated_at&limit=1`
-  ).catch(() => []);
-  if (isStaleEvent(existing[0]?.updated_at, attrs.updated_at)) {
-    console.warn("[fuseguard:webhook] ignoring stale event", eventName, orgId);
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-  }
-
-  // Upsert subscription — idempotent on org_id (LS may replay).
-  await sbUpsert(env, "subscriptions", "org_id", {
-    org_id: orgId,
-    lemon_squeezy_subscription_id: lsSubId,
-    lemon_squeezy_order_id: attrs.order_id?.toString() ?? null,
-    lemon_squeezy_customer_id: attrs.customer_id?.toString() ?? null,
-    plan_id: planId,
-    status,
-    renews_at: attrs.renews_at ?? null,
-    // Store the LS event timestamp (not now()) so the replay guard compares like-for-like.
-    updated_at: attrs.updated_at ?? new Date().toISOString(),
-  });
-
-  // Sync org plan_id — log on failure so stale plan_id is observable.
-  const patchRes = await fetch(`${env.SUPABASE_URL}/rest/v1/orgs?id=eq.${encodeURIComponent(orgId)}`, {
-    method: "PATCH",
+  // Replay guard + upsert + org plan sync in one atomic DB call. The RPC's internal
+  // `WHERE excluded.updated_at > subscriptions.updated_at` predicate makes a replayed or
+  // out-of-order event a no-op — no read-then-write TOCTOU window (migration 0008).
+  const rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/apply_subscription_event`, {
+    method: "POST",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
       Prefer: "return=minimal",
     },
-    body: JSON.stringify({ plan_id: planId }),
+    body: JSON.stringify({
+      p_org_id: orgId,
+      p_lemon_squeezy_subscription_id: lsSubId,
+      p_lemon_squeezy_order_id: attrs.order_id?.toString() ?? null,
+      p_lemon_squeezy_customer_id: attrs.customer_id?.toString() ?? null,
+      p_plan_id: planId,
+      p_status: status,
+      p_renews_at: attrs.renews_at ?? null,
+      // LS event timestamp drives the ordering predicate — pass it, not now().
+      p_updated_at: attrs.updated_at ?? new Date().toISOString(),
+    }),
   });
-  if (!patchRes.ok) {
-    console.error(`[fuseguard:webhook] org plan_id sync failed: ${patchRes.status} org=${orgId}`);
+  if (!rpcRes.ok) {
+    console.error(`[fuseguard:webhook] apply_subscription_event failed: ${rpcRes.status} org=${orgId}`);
+    return new Response(JSON.stringify({ ok: false }), { status: 500 });
   }
 
   console.log(`[fuseguard:webhook] ${eventName} org=${orgId} status=${status}`);
@@ -351,7 +354,7 @@ async function handleLsWebhook(request: Request, env: Env): Promise<Response> {
 // ── Worker export ─────────────────────────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
@@ -363,18 +366,33 @@ export default {
       return handleLsWebhook(request, env);
     }
 
+    // C1 FIX: read sessionId once here (re-validated by the proxy handler later);
+    // thread it into lookupKey so Supabase-backed sessions resolve their DO. Lightweight
+    // pre-check with the shared pattern avoids resolving a DO for a header worker.ts rejects.
+    const rawSession = request.headers.get("x-fuseguard-session");
+    const sessionId = rawSession != null && SESSION_ID_PATTERN.test(rawSession) ? rawSession : null;
+
     // keyId threaded synchronously from lookupKey — no second DB round-trip, no race.
-    let resolvedKeyId: string | undefined;
+    let resolvedKeyId: string | null = null;
 
     const proxyEnv: ProxyEnv = {
       FAILURE_MODE: env.FAILURE_MODE ?? "closed",
       upstreamFetch: fetch,
       lookupKey: async (keyHash: string) => {
-        const result = await lookupKey(keyHash, env);
-        if (result) resolvedKeyId = result.keyId; // set synchronously before pipeline runs
+        const result = await lookupKey(keyHash, env, sessionId);
+        if (result) resolvedKeyId = result.keyId ?? null;
         return result; // KeyLookupResult (extra keyId field ignored by proxy handler)
       },
-      emitEvent: (e: unknown) => makeEmitter(env, resolvedKeyId)(e),
+      // M3 FIX: wrap emitEvent in ctx.waitUntil so fire-and-forget sbInsert calls
+      // are not dropped when the isolate tears down after the response is returned.
+      emitEvent: (e: unknown) => {
+        // Capture keyId at the call site — not inside the microtask — so the event keeps the
+        // keyId that was current when it fired, regardless of later lookup mutations.
+        const capturedKeyId = resolvedKeyId ?? undefined;
+        ctx.waitUntil(Promise.resolve().then(() => makeEmitter(env, capturedKeyId)(e)));
+      },
+      // C2/H3 FIX: expose ctx.waitUntil so streaming reconcile is registered with the runtime.
+      waitUntil: (p: Promise<unknown>) => ctx.waitUntil(p),
     };
 
     return proxyHandler(request, proxyEnv);
