@@ -112,3 +112,43 @@
     @apply inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold;
   }
 }
+
+/* ── Landing animations ──────────────────────────────────────────────────── */
+
+/* Scroll-reveal: hidden (faded + nudged down) until .fg-reveal-in is added. */
+.fg-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  will-change: opacity, transform;
+}
+.fg-reveal-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero load-in: stagger children fade + rise on mount. */
+@keyframes fg-rise-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.fg-hero-item {
+  opacity: 0;
+  animation: fg-rise-in 0.6s ease-out forwards;
+}
+.fg-hero-1 { animation-delay: 0.05s; }
+.fg-hero-2 { animation-delay: 0.15s; }
+.fg-hero-3 { animation-delay: 0.25s; }
+.fg-hero-4 { animation-delay: 0.35s; }
+.fg-hero-5 { animation-delay: 0.45s; }
+
+/* Respect reduced-motion: show everything immediately, no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .fg-reveal,
+  .fg-hero-item {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
