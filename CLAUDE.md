@@ -21,20 +21,29 @@ Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 | 2 — Dashboard | ✅ Done | Auth, keys, budgets, spend chart, RLS, Worker wired |
 | 3 — Billing | ✅ Done | LS webhook, checkout, free tier trigger |
 | 4 — Harden | ✅ Done | Security audit (2× Opus), rate limit, replay guard, reservation TTL |
-| 5 — Launch | ✅ Done | CF Pages edge deploy, landing page, real pricing, examples |
+| 5 — Launch | ✅ Done | CF Workers deploy (OpenNext), landing page, real pricing, examples |
 | 6 — Distribute | ⬜ Next | Show HN, r/LocalLLaMA, build-in-public funnel |
 
-**Live:** Dashboard `https://fuseguard.pages.dev` · Proxy `https://fuseguard-proxy.kartikds009.workers.dev`
+**Live:** Dashboard `https://fuseguard.kartikds009.workers.dev` · Proxy `https://fuseguard-proxy.kartikds009.workers.dev`
+
+**Stack now:** Next.js 16 · TypeScript 6 · CI runners node 22 · dashboard deploys to CF **Workers**
+via OpenNext (`@opennextjs/cloudflare`) — migrated off the deprecated `@cloudflare/next-on-pages`.
+**CD:** merge to `main` → `deploy.yml` auto-builds + deploys proxy Worker (`wrangler --env production`)
+and dashboard Worker (OpenNext). Requires repo secrets `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+(the NEXT_PUBLIC ones are baked into the client bundle at build time — must be in CI build env).
 
 **Next:** Phase 6 — Distribute. Remaining pre-public: Google OAuth publish (Testing mode now),
-LS live mode (needs GST/KYC), grace-period downgrade job (past_due → free after N days).
+LS live mode (needs GST/KYC), grace-period downgrade job (past_due → free after N days),
+vitest 2→4 bump (deferred — npm platform-dep lockfile issue, PR #42 open).
 
 ## Infrastructure
 
 | Service | Details |
 |---------|---------|
-| Supabase | Project `omywdgbasfisgftktxij` (Mumbai) |
+| Supabase | Project `omywdgbasfisgftktxij` (Mumbai). Auth redirect allowlist must include the Workers domain |
 | CF Worker staging | `fuseguard-proxy-staging.kartikds009.workers.dev` |
+| Dashboard (prod) | `fuseguard.kartikds009.workers.dev` (CF Worker, OpenNext) |
 | Dashboard (local) | `http://localhost:3000` — run `npm run dev` in `packages/hosted/dashboard` |
 | Lemon Squeezy | Test mode, store `fuseguard`, $15/mo Pro plan |
 | GitHub | `github.com/Kartikd09/Fuseguard` |
@@ -49,10 +58,12 @@ packages/
     src/budget-do.ts  # Durable Object — reserve/reconcile, atomic counters
     wrangler.toml     # CF Worker config (staging + production envs)
   hosted/
-    dashboard/        # PROPRIETARY — Next.js 15 dashboard (CF Pages)
+    dashboard/        # PROPRIETARY — Next.js 16 dashboard (CF Workers via OpenNext)
       src/app/        # Pages: dashboard, keys, budgets, billing, setup, login
-      src/app/api/    # API routes: /keys, /keys/[id], /budgets, /budgets/[id]
-      src/lib/        # Supabase helpers, crypto, spend aggregation
+      src/app/api/    # API routes: /keys, /keys/[id], /budgets, /budgets/[id], /active-org
+      src/lib/        # Supabase helpers, crypto, spend aggregation, org-context
+      open-next.config.ts  # OpenNext Cloudflare adapter config
+      wrangler.jsonc  # CF Workers config (main = .open-next/worker.js)
 supabase/
   migrations/         # All schema migrations (apply with `supabase db push`)
 ```
