@@ -21,10 +21,15 @@ Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 | 2 — Dashboard | ✅ Done | Auth, keys, budgets, spend chart, RLS, Worker wired |
 | 3 — Billing | ✅ Done | LS webhook, checkout, free tier trigger |
 | 4 — Harden | ✅ Done | Security audit (2× Opus), rate limit, replay guard, reservation TTL |
-| 5 — Launch | ✅ Done | CF Workers deploy (OpenNext), landing page, real pricing, examples |
+| 5 — Launch | ✅ Done | CF Workers deploy (OpenNext), landing page (+ fluid cursor / scroll-reveal animations), real pricing, examples |
 | 6 — Distribute | ⬜ Next | Show HN, r/LocalLLaMA, build-in-public funnel |
 
 **Live:** Dashboard `https://fuseguard.kartikds009.workers.dev` · Proxy `https://fuseguard-proxy.kartikds009.workers.dev`
+
+**Landing animations:** WebGL fluid cursor trail (`webgl-fluid-enhanced`, pinned 0.8.0, window→splatAtLocation,
+DPR-scaled x), hero stagger load-in, scroll-reveal sections (IntersectionObserver). All
+`prefers-reduced-motion` guarded; `<noscript>` forces content visible for crawlers. See
+`src/components/landing/{FluidCursor,Reveal}.tsx`.
 
 **Stack now:** Next.js 16 · TypeScript 6 · CI runners node 22 · dashboard deploys to CF **Workers**
 via OpenNext (`@opennextjs/cloudflare`) — migrated off the deprecated `@cloudflare/next-on-pages`.
@@ -36,6 +41,21 @@ and dashboard Worker (OpenNext). Requires repo secrets `CLOUDFLARE_API_TOKEN`,
 **Next:** Phase 6 — Distribute. Remaining pre-public: Google OAuth publish (Testing mode now),
 LS live mode (needs GST/KYC), grace-period downgrade job (past_due → free after N days),
 vitest 2→4 bump (deferred — npm platform-dep lockfile issue, PR #42 open).
+
+**Dependabot — 2 MEDIUM accepted-risk (no fix needed):** (1) `vite` GHSA-4w7w — false positive,
+advisory affects vite 6.0.0–6.4.1, we run 5.4.21 (dev-only test bundler, never run `vite dev`).
+(2) `postcss` GHSA-qx2v — `next`'s vendored `postcss@8.4.31`, build-time only, XSS needs
+attacker-controlled CSS (ours is static); npm `overrides` can't penetrate next's bundled copy —
+clears when next bumps it. Both build-time, not in shipped runtime, not exploitable in our usage.
+
+**DB hardening (migrations 0006–0010, applied to prod):** webhook RPC `apply_subscription_event`,
+rate-limit + grace-period pg_cron jobs, nullable telemetry FK, and migration 0010 revoked public
+REST `EXECUTE` on the 4 internal SECURITY DEFINER fns (`check_api_key_limit`, `handle_new_user`,
+`rls_auto_enable`, `check_rate_limit`) — Supabase advisor DEFINER warns cleared (10 → 2).
+Remaining 2 advisors are accept-risk: (a) **leaked-password protection** is Supabase **Pro-only**
+(we're free tier) and only applies to email+password — we're OAuth/magic-link primary, so moot;
+(b) `rate_limits` RLS-enabled-no-policy is **INFO/intentional** (table fully locked, service_role
+reaches it via grants). Re-run `mcp supabase get_advisors` after any DDL.
 
 ## Infrastructure
 

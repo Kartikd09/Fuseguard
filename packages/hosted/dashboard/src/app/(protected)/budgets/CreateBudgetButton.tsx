@@ -198,8 +198,9 @@ export default function CreateBudgetButton({ keys, asText, defaultKeyId, editBud
             {/* Limit value */}
             <div className="space-y-1.5">
               <Label htmlFor="limit-value">{form.limit_type === "usd" ? "Limit ($)" : "Limit (tokens)"}</Label>
-              <Input id="limit-value" type="number" min="0.01"
-                step={form.limit_type === "usd" ? "0.01" : "1000"} required
+              <Input id="limit-value" type="number"
+                min={form.limit_type === "usd" ? "0.01" : "1"}
+                step={form.limit_type === "usd" ? "0.01" : "1"} required
                 value={form.limit_value} onChange={(e) => update("limit_value", e.target.value)}
                 placeholder={form.limit_type === "usd" ? "20.00" : "1000000"}
                 disabled={isSubmitting} className="h-10" />
