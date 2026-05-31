@@ -42,7 +42,7 @@ export default function FluidCursor() {
       lastY = e.clientY;
       primed = true;
       // splatForce scales the delta; keep it lively but not violent.
-      sim.splatAtLocation(e.clientX, e.clientY, dx * 8, dy * 8);
+      sim.splatAtLocation(e.clientX, e.clientY, dx * 4, dy * 4);
     };
 
     void import("webgl-fluid-enhanced").then(({ default: WebGLFluidEnhanced }) => {
@@ -52,12 +52,12 @@ export default function FluidCursor() {
         colorPalette: ["#E84C30", "#F2795E", "#C73A22"],
         transparent: true,
         backgroundColor: "#000000",
-        densityDissipation: 2.5,
-        velocityDissipation: 1.5,
-        splatRadius: 0.25,
-        splatForce: 6000,
-        curl: 25,
-        pressure: 0.8,
+        densityDissipation: 6, // fade fast — leave only a brief wisp
+        velocityDissipation: 3,
+        splatRadius: 0.1, // thin trail, not big clouds
+        splatForce: 2400, // gentle, less spread
+        curl: 8, // calmer, less turbulent swirl
+        pressure: 0.6,
         bloom: false,
         sunrays: false,
         hover: false, // we feed positions ourselves via splatAtLocation
