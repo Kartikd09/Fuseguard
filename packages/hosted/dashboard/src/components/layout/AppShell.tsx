@@ -10,13 +10,13 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import OrgSwitcher from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import type { OrgOption } from "@/lib/data/queries";
+import Logo from "@/components/landing/Logo";
 import {
   LayoutDashboard,
   Plug,
   KeyRound,
   Shield,
   CreditCard,
-  Zap,
   LogOut,
 } from "lucide-react";
 
@@ -60,8 +60,8 @@ export default function AppShell({ children, userEmail, orgs, activeOrgId }: App
             href="/dashboard"
             className="flex items-center gap-2.5 mb-7 px-2 py-1 rounded-lg hover:bg-muted transition-colors"
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary shrink-0">
-              <Zap className="h-4 w-4 text-primary-foreground" aria-hidden="true" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary shrink-0 text-primary-foreground">
+              <Logo size={17} decorative />
             </div>
             <span className="text-sm font-semibold tracking-tight text-foreground">FuseGuard</span>
           </Link>
@@ -128,8 +128,8 @@ export default function AppShell({ children, userEmail, orgs, activeOrgId }: App
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-border bg-card px-4 h-14">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
-            <Zap className="h-3.5 w-3.5 text-primary-foreground" />
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Logo size={15} decorative />
           </div>
           <span className="text-sm font-semibold text-foreground">FuseGuard</span>
         </Link>

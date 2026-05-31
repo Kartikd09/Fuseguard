@@ -38,7 +38,9 @@ client = Anthropic(
 
 ## Pricing
 
-| | Free | Pro — $19/mo |
+**Free during the public beta — no card.** Pricing gets finalized with our first users.
+
+| | Free / Self-host | Pro — managed beta |
 |---|---|---|
 | API keys | 1 | Unlimited |
 | Hard-kill budgets | Per key | Per key + per session |
@@ -50,14 +52,18 @@ client = Anthropic(
 
 ## Status
 
-**Phase 2 complete.** Working proxy + dashboard + auth. Phase 3 (billing) in progress.
+**Public beta.** Live proxy + dashboard, deployed on Cloudflare Workers, 168 tests green.
+
+- **Today:** Anthropic, per-key & per-session hard budgets, pre-call 402 block, loop detection.
+- **Roadmap:** OpenAI-compatible gateway · per-tenant / per-user / per-agent budget scopes.
 
 - ✅ Phase 0 — Scaffold (monorepo, CI, branch protection)
-- ✅ Phase 1 — Proxy core (136 tests: budgets, loop detection, streaming, concurrency)
+- ✅ Phase 1 — Proxy core (168 tests: budgets, loop detection, streaming, concurrency)
 - ✅ Phase 2 — Dashboard (auth, API keys, budgets, spend chart, blocks)
-- 🚧 Phase 3 — Billing (Lemon Squeezy)
-- ⬜ Phase 4 — Harden / Security
-- ⬜ Phase 5 — Launch
+- ✅ Phase 3 — Billing (Lemon Squeezy)
+- ✅ Phase 4 — Harden / Security
+- ✅ Phase 5 — Launch (CF Workers, landing page, live)
+- 🚧 Phase 6 — Distribute / validate
 
 ---
 

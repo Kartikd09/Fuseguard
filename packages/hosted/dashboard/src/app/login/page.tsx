@@ -2,7 +2,7 @@
 // Login page — email magic-link auth via Supabase.
 import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
-import { Zap } from "lucide-react";
+import Logo from "@/components/landing/Logo";
 
 // Force dynamic rendering — this page checks auth state server-side.
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-8">
         {/* Logo / brand */}
         <div className="text-center space-y-3">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary mb-1">
-            <Zap className="h-6 w-6 text-primary-foreground" aria-hidden="true" />
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary mb-1 text-primary-foreground">
+            <Logo size={26} decorative />
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
