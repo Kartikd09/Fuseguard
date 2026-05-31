@@ -5,6 +5,8 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Zap, ShieldOff, Check, X, Code2, ArrowRight } from "lucide-react";
+import FluidCursor from "@/components/landing/FluidCursor";
+import Reveal from "@/components/landing/Reveal";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,8 @@ export default async function LandingPage() {
 
   return (
     <main className="relative min-h-screen text-foreground">
+      {/* WebGL fluid cursor trail (desktop only, respects reduced-motion) — behind all content */}
+      <FluidCursor />
       {/* Page-wide faint grid + top glow (behind content, above page bg) */}
       <div
         aria-hidden
@@ -73,17 +77,17 @@ export default async function LandingPage() {
 
       {/* Hero */}
       <section className="relative mx-auto max-w-3xl px-6 pt-20 pb-16 text-center">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground mb-6">
+        <span className="fg-hero-item fg-hero-1 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground mb-6">
           <ShieldOff className="h-3 w-3 text-primary" /> Enforcement, not observability
         </span>
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
+        <h1 className="fg-hero-item fg-hero-2 text-4xl sm:text-5xl font-bold tracking-tight">
           The circuit breaker for AI agents.
         </h1>
-        <p className="mt-5 text-lg text-muted-foreground max-w-2xl mx-auto">
+        <p className="fg-hero-item fg-hero-3 mt-5 text-lg text-muted-foreground max-w-2xl mx-auto">
           Set a budget. FuseGuard kills the call <em className="text-foreground not-italic font-medium">before</em> it
           breaks it — not a $47,000 bill later.
         </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <div className="fg-hero-item fg-hero-4 mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button asChild size="lg">
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
               <Code2 className="h-4 w-4" /> Self-host free
@@ -93,12 +97,13 @@ export default async function LandingPage() {
             <Link href="/login">Start hosted — $15/mo <ArrowRight className="h-4 w-4" /></Link>
           </Button>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">
+        <p className="fg-hero-item fg-hero-5 mt-4 text-xs text-muted-foreground">
           Open-source · your API key never leaves your infrastructure.
         </p>
       </section>
 
       {/* The hook */}
+      <Reveal>
       <section className="mx-auto max-w-3xl px-6 py-14">
         <div className="rounded-2xl border border-border bg-muted/30 p-8">
           <p className="text-lg leading-relaxed">
@@ -113,8 +118,10 @@ export default async function LandingPage() {
           </p>
         </div>
       </section>
+      </Reveal>
 
       {/* Wedge */}
+      <Reveal>
       <section className="mx-auto max-w-3xl px-6 py-14">
         <h2 className="text-2xl font-semibold text-center">They watch. We stop.</h2>
         <div className="mt-8 overflow-hidden rounded-xl border border-border">
@@ -146,8 +153,10 @@ export default async function LandingPage() {
           </table>
         </div>
       </section>
+      </Reveal>
 
       {/* How it works */}
+      <Reveal>
       <section className="mx-auto max-w-3xl px-6 py-14">
         <h2 className="text-2xl font-semibold text-center">One line. No SDK rewrite.</h2>
         <div className="mt-8 rounded-xl border border-border bg-muted/30 overflow-x-auto">
@@ -174,8 +183,10 @@ client = Anthropic(
           </div>
         </div>
       </section>
+      </Reveal>
 
       {/* Pricing */}
+      <Reveal>
       <section className="mx-auto max-w-3xl px-6 py-14">
         <h2 className="text-2xl font-semibold text-center">Pricing</h2>
         <div className="mt-8 grid sm:grid-cols-2 gap-4">
@@ -201,6 +212,7 @@ client = Anthropic(
           </div>
         </div>
       </section>
+      </Reveal>
 
       {/* Footer */}
       <footer className="border-t border-border mt-10">
