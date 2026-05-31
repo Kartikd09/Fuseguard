@@ -10,7 +10,6 @@ import { encryptSecret } from "@/lib/crypto/encrypt";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-export const runtime = "edge";
 
 interface CreateKeyBody {
   label: string;

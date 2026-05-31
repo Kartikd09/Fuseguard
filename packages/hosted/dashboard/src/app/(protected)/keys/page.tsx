@@ -14,7 +14,6 @@ import { KeyRound, Info } from "lucide-react";
 
 export const metadata: Metadata = { title: "API Keys — FuseGuard" };
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 export default async function KeysPage() {
   const supabase = await createServerSupabaseClient();

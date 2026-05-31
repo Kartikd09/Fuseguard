@@ -13,7 +13,6 @@ import { KeyRound, Plug, ArrowRight, AlertTriangle } from "lucide-react";
 
 export const metadata: Metadata = { title: "Setup — FuseGuard" };
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 const PROXY_BASE_URL = process.env["NEXT_PUBLIC_SUPABASE_URL"]
   ? "https://proxy.fuseguard.app"

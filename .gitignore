@@ -42,5 +42,8 @@ wrangler.toml.bak
 *.tsbuildinfo
 supabase/.temp/
 
-# CF Pages adapter output
+# CF Pages adapter output (deprecated — superseded by OpenNext)
 packages/hosted/dashboard/.vercel/
+
+# OpenNext Cloudflare build output
+packages/hosted/dashboard/.open-next/

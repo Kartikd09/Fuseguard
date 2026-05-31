@@ -34,7 +34,6 @@ export const metadata: Metadata = { title: "Overview — FuseGuard" };
 
 // Force dynamic — reads from Supabase auth + live data; cannot be statically prerendered.
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 const RANGE_CONFIG = {
   "24h": { hours: 24,  label: "last 24h" },
