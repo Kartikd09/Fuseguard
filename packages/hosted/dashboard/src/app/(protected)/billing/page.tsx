@@ -1,6 +1,7 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // Billing page — Free vs Pro ($15/mo) tier display. Lemon Squeezy checkout.
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchSubscription, resolveActiveOrgId } from "@/lib/data/queries";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -36,7 +37,9 @@ const PRO_FEATURES = [
 
 export default async function BillingPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   const subscription = orgId ? await fetchSubscription(supabase, orgId) : null;
   let checkoutUrl = LEMON_SQUEEZY_CHECKOUT_URL;
   if (orgId) {

@@ -1,6 +1,7 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // PATCH /api/budgets/[id] — update a budget. DELETE /api/budgets/[id] — deactivate.
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
@@ -25,7 +26,9 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
   let body: UpdateBudgetBody;
@@ -57,7 +60,9 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
   const { error } = await supabase.from("budgets").update({ is_active: false }).eq("id", id).eq("org_id", orgId);

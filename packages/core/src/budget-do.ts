@@ -19,8 +19,13 @@ export interface Env {
   readonly FAILURE_MODE: FailureMode;
 }
 
+// C2/H3 FIX: reservations carry their creation time so stale orphans self-heal.
+// A worker crash between reserve and reconcile would otherwise hold the budget forever.
+const RESERVATION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 interface Reservation {
   readonly estCost: number;
+  readonly createdAt: number; // epoch ms — set at reserve time
   reconciled: boolean;
 }
 
@@ -49,11 +54,27 @@ function makeReservationId(): string {
 }
 
 function totalReserved(reservations: Record<string, Reservation>): number {
+  const now = Date.now();
   let total = 0;
   for (const r of Object.values(reservations)) {
-    if (!r.reconciled) total += r.estCost;
+    // C2/H3 FIX: exclude stale unreconciled reservations so crashed-mid-flight holds self-heal.
+    if (!r.reconciled && (now - (r.createdAt ?? 0)) <= RESERVATION_TTL_MS) {
+      total += r.estCost;
+    }
   }
   return total;
+}
+
+// Drop entries older than the TTL so storage doesn't grow unbounded across crashes (F9).
+// Reconciled cost is already folded into spentUsd; the TTL window keeps a reconciled entry
+// only long enough to preserve reconcile idempotency, then it's safe to forget.
+function pruneReservations(reservations: Record<string, Reservation>): Record<string, Reservation> {
+  const now = Date.now();
+  const kept: Record<string, Reservation> = {};
+  for (const [id, r] of Object.entries(reservations)) {
+    if (now - (r.createdAt ?? 0) <= RESERVATION_TTL_MS) kept[id] = r;
+  }
+  return kept;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -176,7 +197,10 @@ export class BudgetDO {
     }
 
     const reservationId = makeReservationId();
-    const newReservations = { ...s.reservations, [reservationId]: { estCost, reconciled: false } };
+    const newReservations = {
+      ...pruneReservations(s.reservations),
+      [reservationId]: { estCost, reconciled: false, createdAt: Date.now() },
+    };
     await this.saveBudgetState({ ...s, reservations: newReservations });
 
     return jsonResponse({ ok: true, blocked: false, reservationId });

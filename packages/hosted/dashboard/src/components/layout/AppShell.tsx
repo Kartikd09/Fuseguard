@@ -7,7 +7,9 @@ import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import OrgSwitcher from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
+import type { OrgOption } from "@/lib/data/queries";
 import {
   LayoutDashboard,
   Plug,
@@ -29,16 +31,20 @@ const navItems = [
 interface AppShellProps {
   children: React.ReactNode;
   userEmail?: string;
+  /** All orgs the user belongs to — undefined or length<=1 hides the switcher. */
+  orgs?: OrgOption[];
+  /** Currently active org id — required when orgs.length > 1 to pre-select the dropdown. */
+  activeOrgId?: string;
 }
 
-export default function AppShell({ children, userEmail }: AppShellProps) {
+export default function AppShell({ children, userEmail, orgs, activeOrgId }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
   async function handleSignOut() {
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push("/");
   }
 
   return (
@@ -92,7 +98,13 @@ export default function AppShell({ children, userEmail }: AppShellProps) {
           </ul>
 
           {/* User footer */}
-          <div className="border-t border-border pt-3 mt-3 space-y-1">
+          <div className="border-t border-border pt-3 mt-3 space-y-2">
+            {/* Org switcher — only when user belongs to multiple orgs */}
+            {orgs && orgs.length > 1 && activeOrgId && (
+              <div className="px-2">
+                <OrgSwitcher orgs={orgs} activeOrgId={activeOrgId} />
+              </div>
+            )}
             <div className="flex items-center justify-between px-2">
               <ThemeToggle />
               {userEmail && (

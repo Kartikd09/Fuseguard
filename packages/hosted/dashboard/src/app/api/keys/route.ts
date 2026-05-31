@@ -3,6 +3,7 @@
 // The Anthropic key is received, encrypted, and stored — never returned after this request.
 // The FuseGuard key is generated here, shown once, stored as a hash only.
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { generateFuseGuardKey, hashKey } from "@/lib/crypto/keys";
 import { encryptSecret } from "@/lib/crypto/encrypt";
@@ -97,7 +98,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Key storage is not configured" }, { status: 503 });
   }
 
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) {
     return NextResponse.json({ error: "No organization for user" }, { status: 403 });
   }
