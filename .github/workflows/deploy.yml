@@ -53,6 +53,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # NEXT_PUBLIC_* are baked into the client bundle at build time — they MUST be
+          # present here or the dashboard ships with placeholder Supabase config and login
+          # silently fails. The anon key is public-by-design (RLS enforces access).
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           # Non-interactive: never prompt for telemetry/error reporting in CI.
           CI: "true"
           WRANGLER_SEND_METRICS: "false"
