@@ -1,53 +1,72 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // Full-page WebGL fluid simulation that trails the cursor ("hand in water").
-// Guards: disabled on prefers-reduced-motion and touch devices (no cursor);
-// paused while the tab is hidden to save GPU/battery.
+// The lib binds mousemove to its own canvas, but our canvas sits behind content
+// (z-0, pointer-events:none) so it never receives events. Instead we listen on
+// window and drive the sim via splatAtLocation — works through the whole page.
+// Guards: disabled on prefers-reduced-motion and touch devices; paused when hidden.
 "use client";
 
 import { useEffect, useRef } from "react";
 
+interface FluidSim {
+  start: () => void;
+  stop: () => void;
+  splatAtLocation: (x: number, y: number, dx: number, dy: number, color?: string) => void;
+}
+
 export default function FluidCursor() {
-  // Outer wrapper owns the fixed full-viewport positioning. The lib forces its
-  // container to position:relative + display:flex, so we hand it a dedicated inner
-  // div sized to 100% — otherwise it overrides our `fixed` and collapses the layout.
+  // Outer wrapper owns the fixed positioning; the lib forces its container to
+  // position:relative + flex, so it gets a dedicated inner div sized to 100%.
   const innerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container = innerRef.current;
-    if (container == null) return;
+    if (innerRef.current == null) return;
 
-    // a11y + device guards — skip entirely when motion is unwanted or there's no cursor.
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const isTouch = window.matchMedia("(pointer: coarse)").matches;
     if (reduceMotion || isTouch) return;
 
-    let sim: { start: () => void; stop: () => void } | null = null;
+    let sim: FluidSim | null = null;
     let cancelled = false;
+    let lastX = 0;
+    let lastY = 0;
+    let primed = false;
 
-    // Dynamic import keeps the WebGL bundle out of the initial page load.
+    // Drive the sim from window-level mouse moves so the trail follows the cursor
+    // everywhere, including over page content that sits above the canvas.
+    const onMouseMove = (e: MouseEvent) => {
+      if (sim == null) return;
+      const dx = primed ? e.clientX - lastX : 0;
+      const dy = primed ? e.clientY - lastY : 0;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      primed = true;
+      // splatForce scales the delta; keep it lively but not violent.
+      sim.splatAtLocation(e.clientX, e.clientY, dx * 8, dy * 8);
+    };
+
     void import("webgl-fluid-enhanced").then(({ default: WebGLFluidEnhanced }) => {
       if (cancelled || innerRef.current == null) return;
-      const instance = new WebGLFluidEnhanced(innerRef.current);
-      instance.setConfig({
-        // Brand-tinted dye on a transparent canvas so the grid + glow show through.
+      const instance = new WebGLFluidEnhanced(innerRef.current) as unknown as FluidSim;
+      (instance as unknown as { setConfig: (c: unknown) => void }).setConfig({
         colorPalette: ["#E84C30", "#F2795E", "#C73A22"],
         transparent: true,
         backgroundColor: "#000000",
-        densityDissipation: 3.5, // fade trails quickly so it stays subtle
-        velocityDissipation: 2,
-        splatRadius: 0.2,
+        densityDissipation: 2.5,
+        velocityDissipation: 1.5,
+        splatRadius: 0.25,
         splatForce: 6000,
-        curl: 20,
+        curl: 25,
         pressure: 0.8,
-        bloom: false, // cheaper; the page already has a glow layer
+        bloom: false,
         sunrays: false,
-        hover: true,
-      } as never);
+        hover: false, // we feed positions ourselves via splatAtLocation
+      });
       instance.start();
       sim = instance;
+      window.addEventListener("mousemove", onMouseMove);
     });
 
-    // Pause the sim when the tab is backgrounded.
     const onVisibility = () => {
       if (sim == null) return;
       if (document.hidden) sim.stop();
@@ -57,6 +76,7 @@ export default function FluidCursor() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("visibilitychange", onVisibility);
       sim?.stop();
     };
@@ -64,7 +84,6 @@ export default function FluidCursor() {
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-      {/* Lib sets this inner div to position:relative + flex and sizes the canvas to it. */}
       <div ref={innerRef} className="h-full w-full" />
     </div>
   );
