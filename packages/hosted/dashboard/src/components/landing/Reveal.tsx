@@ -36,11 +36,18 @@ export default function Reveal({ children, delay = 0, className }: RevealProps) 
     return () => observer.disconnect();
   }, []);
 
+  // Drop the promoted compositor layer once the reveal transition finishes so we
+  // don't keep a will-change layer alive for the page lifetime.
+  const onTransitionEnd = () => {
+    if (ref.current != null) ref.current.style.willChange = "auto";
+  };
+
   return (
     <div
       ref={ref}
       className={`fg-reveal${shown ? " fg-reveal-in" : ""}${className ? ` ${className}` : ""}`}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
+      onTransitionEnd={onTransitionEnd}
     >
       {children}
     </div>

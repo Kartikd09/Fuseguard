@@ -7,12 +7,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type WebGLFluidEnhanced from "webgl-fluid-enhanced";
 
-interface FluidSim {
-  start: () => void;
-  stop: () => void;
-  splatAtLocation: (x: number, y: number, dx: number, dy: number, color?: string) => void;
-}
+type FluidInstance = InstanceType<typeof WebGLFluidEnhanced>;
 
 export default function FluidCursor() {
   // Outer wrapper owns the fixed positioning; the lib forces its container to
@@ -26,7 +23,7 @@ export default function FluidCursor() {
     const isTouch = window.matchMedia("(pointer: coarse)").matches;
     if (reduceMotion || isTouch) return;
 
-    let sim: FluidSim | null = null;
+    let sim: FluidInstance | null = null;
     let cancelled = false;
     let lastX = 0;
     let lastY = 0;
@@ -41,14 +38,16 @@ export default function FluidCursor() {
       lastX = e.clientX;
       lastY = e.clientY;
       primed = true;
-      // splatForce scales the delta; keep it lively but not violent.
-      sim.splatAtLocation(e.clientX, e.clientY, dx * 4, dy * 4);
+      // The lib normalizes splat x by canvas.width (physical px) but y by
+      // clientHeight (CSS px), so x must be scaled by devicePixelRatio to land
+      // under the cursor on HiDPI displays. splatForce scales the delta.
+      sim.splatAtLocation(e.clientX * window.devicePixelRatio, e.clientY, dx * 4, dy * 4);
     };
 
     void import("webgl-fluid-enhanced").then(({ default: WebGLFluidEnhanced }) => {
       if (cancelled || innerRef.current == null) return;
-      const instance = new WebGLFluidEnhanced(innerRef.current) as unknown as FluidSim;
-      (instance as unknown as { setConfig: (c: unknown) => void }).setConfig({
+      const instance = new WebGLFluidEnhanced(innerRef.current);
+      instance.setConfig({
         colorPalette: ["#E84C30", "#F2795E", "#C73A22"],
         transparent: true,
         backgroundColor: "#000000",
@@ -67,10 +66,19 @@ export default function FluidCursor() {
       window.addEventListener("mousemove", onMouseMove);
     });
 
+    // Pause via togglePause (cheap flag) rather than stop/start, which would
+    // reallocate all GPU framebuffers on every tab re-focus. Track our own
+    // paused flag so we only toggle when the visibility state actually flips.
+    let paused = false;
     const onVisibility = () => {
       if (sim == null) return;
-      if (document.hidden) sim.stop();
-      else sim.start();
+      if (document.hidden && !paused) {
+        sim.togglePause();
+        paused = true;
+      } else if (!document.hidden && paused) {
+        sim.togglePause();
+        paused = false;
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
 
