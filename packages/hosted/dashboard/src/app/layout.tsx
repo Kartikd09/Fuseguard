@@ -21,7 +21,7 @@ export default function RootLayout({
         {/* Without JS the scroll-reveal sections never get .fg-reveal-in, so force
             them visible for no-JS users and crawlers. */}
         <noscript>
-          <style>{`.fg-reveal{opacity:1!important;transform:none!important}.fg-hero-item{opacity:1!important;animation:none!important}`}</style>
+          <style>{`.fg-reveal{opacity:1!important;transform:none!important}.fg-hero-item{opacity:1!important;animation:none!important}.fg-card-in{opacity:1!important;animation:none!important}`}</style>
         </noscript>
       </head>
       <body className="h-full bg-background">
