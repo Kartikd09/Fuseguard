@@ -46,6 +46,13 @@ export function isStaleEvent(storedTsIso: string | null | undefined, eventTsIso:
   return eventTs <= storedTs;
 }
 
+// H4 FIX: paused/past_due is a grace period — keep Pro access, do NOT drop to free.
+// Only cancelled/expired status causes an actual plan downgrade to free.
+// Returns true when the org's Pro plan_id should be preserved (grace period active).
+export function isGracePeriodStatus(status: "active" | "past_due" | "cancelled"): boolean {
+  return status === "active" || status === "past_due";
+}
+
 // Constant-time HMAC-SHA256 verify. Rejects malformed/odd-length hex defensively.
 export async function verifyLsSignature(
   body: string,

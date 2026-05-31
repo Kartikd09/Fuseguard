@@ -1,6 +1,7 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // Budgets page — CRUD budgets (scope, limit_type, value, window).
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchBudgets, fetchApiKeys, fetchUsageEvents, hoursAgoIso, resolveActiveOrgId } from "@/lib/data/queries";
 import { budgetUsedPercent, formatUsd, formatTokens } from "@/lib/data/spend";
@@ -43,7 +44,9 @@ function limitLabel(budget: Budget): string {
 export default async function BudgetsPage({ searchParams }: { searchParams: Promise<{ keyId?: string }> }) {
   const { keyId } = await searchParams;
   const supabase = await createServerSupabaseClient();
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const [budgets, keys, events] = await Promise.all([
     fetchBudgets(supabase, orgId),

@@ -17,13 +17,17 @@ Open-core: MIT proxy + paid hosted dashboard ($15/mo).
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 0 — Scaffold | ✅ Done | Monorepo, CI, branch protection |
-| 1 — Proxy core | ✅ Done | 136 tests, budget DO, loop detection, streaming |
+| 1 — Proxy core | ✅ Done | 168 tests, budget DO, loop detection, streaming |
 | 2 — Dashboard | ✅ Done | Auth, keys, budgets, spend chart, RLS, Worker wired |
 | 3 — Billing | ✅ Done | LS webhook, checkout, free tier trigger |
-| 4 — Harden | ⬜ Next | Security pass, latency NFR, DO cold-start |
-| 5 — Launch | ⬜ | CF Pages deploy, landing page, README quickstart |
+| 4 — Harden | ✅ Done | Security audit (2× Opus), rate limit, replay guard, reservation TTL |
+| 5 — Launch | ✅ Done | CF Pages edge deploy, landing page, real pricing, examples |
+| 6 — Distribute | ⬜ Next | Show HN, r/LocalLLaMA, build-in-public funnel |
 
-**Next:** Phase 4 — Harden/Security (see Roadmap)
+**Live:** Dashboard `https://fuseguard.pages.dev` · Proxy `https://fuseguard-proxy.kartikds009.workers.dev`
+
+**Next:** Phase 6 — Distribute. Remaining pre-public: Google OAuth publish (Testing mode now),
+LS live mode (needs GST/KYC), grace-period downgrade job (past_due → free after N days).
 
 ## Infrastructure
 

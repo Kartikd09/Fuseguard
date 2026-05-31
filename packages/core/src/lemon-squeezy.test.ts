@@ -5,6 +5,7 @@ import {
   verifyLsSignature,
   computeLsSignature,
   isStaleEvent,
+  isGracePeriodStatus,
   LS_HANDLED_EVENTS,
 } from "./lemon-squeezy.js";
 
@@ -87,6 +88,21 @@ describe("verifyLsSignature", () => {
 
   it("rejects odd-length hex signature without throwing", async () => {
     expect(await verifyLsSignature("body", "abc", SECRET)).toBe(false);
+  });
+});
+
+describe("isGracePeriodStatus (H4 — paused/past_due keeps Pro access)", () => {
+  it("active status is in grace period (keep Pro)", () => {
+    expect(isGracePeriodStatus("active")).toBe(true);
+  });
+
+  it("past_due status is in grace period (keep Pro, do NOT downgrade to free)", () => {
+    // paused and unpaid both map to past_due — they are grace-period states, not cancellations.
+    expect(isGracePeriodStatus("past_due")).toBe(true);
+  });
+
+  it("cancelled status is NOT in grace period (downgrade to free)", () => {
+    expect(isGracePeriodStatus("cancelled")).toBe(false);
   });
 });
 

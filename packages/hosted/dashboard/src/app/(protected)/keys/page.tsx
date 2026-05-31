@@ -1,6 +1,7 @@
 // PROPRIETARY (NOT MIT) — see packages/hosted/NOTICE.
 // API Keys page — list (masked), create, per-key budget summary.
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchApiKeys, fetchBudgets, fetchOrgPlan, resolveActiveOrgId } from "@/lib/data/queries";
 import EmptyState from "@/components/ui/EmptyState";
@@ -17,7 +18,9 @@ export const runtime = "edge";
 
 export default async function KeysPage() {
   const supabase = await createServerSupabaseClient();
-  const orgId = await resolveActiveOrgId(supabase);
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
   if (!orgId) return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;
   const [keys, budgets, plan] = await Promise.all([
     fetchApiKeys(supabase, orgId),

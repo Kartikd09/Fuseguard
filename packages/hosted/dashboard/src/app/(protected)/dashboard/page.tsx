@@ -2,6 +2,7 @@
 // Dashboard overview — total spend, blocked calls, top spenders, per-key drill-down.
 // Server Component: fetches data server-side; client child polls for freshness (2s).
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchApiKeys, fetchBudgets, fetchBlocks, fetchUsageEvents, hoursAgoIso, resolveActiveOrgId } from "@/lib/data/queries";
 import SpendChart from "@/components/ui/SpendChart";
@@ -51,8 +52,10 @@ export default async function DashboardPage({
   const { hours, label } = RANGE_CONFIG[range];
 
   const supabase = await createServerSupabaseClient();
+  const cookieStore = await cookies();
+  const cookieOrgId = cookieStore.get("fg_active_org")?.value ?? null;
   const since = hoursAgoIso(hours);
-  const orgId = await resolveActiveOrgId(supabase);
+  const orgId = await resolveActiveOrgId(supabase, cookieOrgId);
 
   if (!orgId) {
     return <div className="p-8 text-muted-foreground">No organization found. Please sign out and sign in again.</div>;

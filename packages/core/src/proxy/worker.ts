@@ -27,12 +27,15 @@ export interface ProxyEnv {
   upstreamFetch: typeof fetch;
   lookupKey: (keyHash: string) => Promise<KeyLookupResult | null>;
   emitEvent: (event: unknown) => void;
+  // C2/H3 FIX: optional waitUntil from ExecutionContext so async stream reconcile
+  // work is registered with the runtime and not dropped on isolate teardown.
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 // ── Validation ─────────────────────────────────────────────────────────────────────────────────
 
 // Session ID must match ^[A-Za-z0-9_\-:.]{1,128}$ (ARCHITECTURE §6, PRD §6).
-const SESSION_ID_PATTERN = /^[A-Za-z0-9_\-:.]{1,128}$/;
+export const SESSION_ID_PATTERN = /^[A-Za-z0-9_\-:.]{1,128}$/;
 
 function validateSessionId(sessionId: string): boolean {
   return SESSION_ID_PATTERN.test(sessionId);
@@ -221,12 +224,14 @@ function teeStreamWithReconcile(
   model: string,
   worstCaseCost: number,
   emitEvent: ProxyEnv["emitEvent"],
-  orgId: string
+  orgId: string,
+  waitUntil?: (p: Promise<unknown>) => void
 ): ReadableStream<Uint8Array> {
   const [clientStream, parserStream] = upstreamStream.tee();
 
-  // Parse the side stream for final usage — runs concurrently with client piping.
-  (async () => {
+  // C2/H3 FIX: register stream reconcile work with ctx.waitUntil so the runtime keeps
+  // the isolate alive until reconciliation completes — prevents dropped reconciles on teardown.
+  const reconcileWork = (async () => {
     const reader = parserStream.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -303,6 +308,8 @@ function teeStreamWithReconcile(
     // Surface reconciliation errors to the event sink instead of swallowing silently.
     emitEvent({ type: "reconcile_error", scope: "stream_async", error: String(err) });
   });
+
+  if (waitUntil != null) waitUntil(reconcileWork);
 
   return clientStream;
 }
@@ -575,7 +582,8 @@ export function createProxyHandler() {
         validBody.model,
         estCost, // Finding #3: pass worst-case as fallback reconciliation amount
         env.emitEvent,
-        orgId
+        orgId,
+        env.waitUntil
       );
 
       // Finding #6: apply response header allowlist to streaming response.
