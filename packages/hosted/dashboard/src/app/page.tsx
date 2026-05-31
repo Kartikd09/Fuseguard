@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Zap, ShieldOff, Check, X, Code2, ArrowRight } from "lucide-react";
+import FluidCursor from "@/components/landing/FluidCursor";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ export default async function LandingPage() {
 
   return (
     <main className="relative min-h-screen text-foreground">
+      {/* WebGL fluid cursor trail (desktop only, respects reduced-motion) — behind all content */}
+      <FluidCursor />
       {/* Page-wide faint grid + top glow (behind content, above page bg) */}
       <div
         aria-hidden
