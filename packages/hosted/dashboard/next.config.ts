@@ -8,10 +8,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Disable x-powered-by header
   poweredByHeader: false,
-  // Skip ESLint during CI build — run it separately with npm run lint
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // Next 16 dropped the `eslint` config key; lint runs separately via `npm run lint`.
   // Defense-in-depth security headers (users paste a live Anthropic secret here).
   async headers() {
     return [
