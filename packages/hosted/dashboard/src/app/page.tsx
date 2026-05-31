@@ -8,6 +8,7 @@ import { ShieldOff, Check, X, Code2, ArrowRight } from "lucide-react";
 import FluidCursor from "@/components/landing/FluidCursor";
 import Reveal from "@/components/landing/Reveal";
 import Logo from "@/components/landing/Logo";
+import GridBackground from "@/components/landing/GridBackground";
 
 export const dynamic = "force-dynamic";
 
@@ -39,30 +40,7 @@ export default async function LandingPage() {
     <main className="relative min-h-screen text-foreground">
       {/* WebGL fluid cursor trail (desktop only, respects reduced-motion) — behind all content */}
       <FluidCursor />
-      {/* Page-wide faint grid + top glow (behind content, above page bg) */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, rgba(130,140,160,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(130,140,160,0.18) 1px, transparent 1px)",
-          backgroundSize: "56px 56px",
-          maskImage: "radial-gradient(ellipse 75% 70% at 50% 45%, transparent 35%, black 95%)",
-          WebkitMaskImage: "radial-gradient(ellipse 75% 70% at 50% 45%, transparent 35%, black 95%)",
-        }}
-      >
-        <div
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{
-            top: "-140px",
-            height: "520px",
-            width: "780px",
-            borderRadius: "9999px",
-            background: "radial-gradient(circle, rgba(232,76,48,0.42), rgba(232,76,48,0.12) 45%, transparent 70%)",
-            filter: "blur(70px)",
-          }}
-        />
-      </div>
+      <GridBackground glow />
 
       <div className="relative z-10">
       {/* Nav */}

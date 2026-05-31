@@ -11,6 +11,7 @@ import OrgSwitcher from "@/components/layout/OrgSwitcher";
 import { cn } from "@/lib/utils";
 import type { OrgOption } from "@/lib/data/queries";
 import Logo from "@/components/landing/Logo";
+import GridBackground from "@/components/landing/GridBackground";
 import {
   LayoutDashboard,
   Plug,
@@ -49,10 +50,12 @@ export default function AppShell({ children, userEmail, orgs, activeOrgId }: App
 
   return (
     <div className="flex h-full min-h-screen bg-background">
+      {/* Faint grid behind content (no glow on data surfaces) */}
+      <GridBackground />
       {/* Sidebar */}
       <nav
         aria-label="Main navigation"
-        className="hidden md:flex md:w-56 md:flex-col md:fixed md:inset-y-0"
+        className="hidden md:flex md:w-56 md:flex-col md:fixed md:inset-y-0 z-20"
       >
         <div className="flex flex-col flex-1 border-r border-border bg-card px-3 py-5">
           {/* Logo */}
@@ -163,7 +166,7 @@ export default function AppShell({ children, userEmail, orgs, activeOrgId }: App
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 md:pl-56 min-h-screen pt-14 md:pt-0 pb-16 md:pb-0">
+      <main className="relative z-10 flex-1 md:pl-56 min-h-screen pt-14 md:pt-0 pb-16 md:pb-0">
         <div className="p-5 md:p-8 max-w-5xl mx-auto">
           {children}
         </div>

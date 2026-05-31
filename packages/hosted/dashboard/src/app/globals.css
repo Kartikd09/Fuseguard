@@ -151,13 +151,39 @@
   text-transform: uppercase;
 }
 
+/* ── Login aurora ─────────────────────────────────────────────────────────
+   Soft brand-colored blobs drifting slowly behind the frosted auth card. */
+@keyframes fg-aurora-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(8%, 6%) scale(1.15); }
+}
+@keyframes fg-aurora-b {
+  0%, 100% { transform: translate(0, 0) scale(1.1); }
+  50%      { transform: translate(-7%, -5%) scale(0.95); }
+}
+.fg-aurora-a { animation: fg-aurora-a 16s ease-in-out infinite; }
+.fg-aurora-b { animation: fg-aurora-b 20s ease-in-out infinite; }
+
+/* Auth card mount: fade + rise. */
+@keyframes fg-card-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+.fg-card-in {
+  opacity: 0;
+  animation: fg-card-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Respect reduced-motion: show everything immediately, no movement. */
 @media (prefers-reduced-motion: reduce) {
   .fg-reveal,
-  .fg-hero-item {
+  .fg-hero-item,
+  .fg-card-in {
     opacity: 1 !important;
     transform: none !important;
     animation: none !important;
     transition: none !important;
   }
+  .fg-aurora-a,
+  .fg-aurora-b { animation: none !important; }
 }

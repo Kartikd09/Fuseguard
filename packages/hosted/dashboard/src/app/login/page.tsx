@@ -3,6 +3,7 @@
 import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
 import Logo from "@/components/landing/Logo";
+import AuroraBackground from "@/components/landing/AuroraBackground";
 
 // Force dynamic rendering — this page checks auth state server-side.
 export const dynamic = "force-dynamic";
@@ -13,11 +14,12 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-8">
+    <main className="relative min-h-screen flex flex-col items-center justify-center px-4">
+      <AuroraBackground />
+      <div className="fg-card-in relative z-10 w-full max-w-sm space-y-8">
         {/* Logo / brand */}
         <div className="text-center space-y-3">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary mb-1 text-primary-foreground">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary mb-1 text-primary-foreground shadow-lg shadow-primary/30">
             <Logo size={26} decorative />
           </div>
           <div>
@@ -30,7 +32,8 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        {/* Frosted glass card */}
+        <div className="rounded-2xl border border-border/60 bg-card/70 p-6 shadow-xl backdrop-blur-xl">
           <LoginForm />
         </div>
 
