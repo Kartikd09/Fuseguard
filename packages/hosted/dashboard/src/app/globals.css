@@ -141,6 +141,15 @@
 .fg-hero-3 { animation-delay: 0.25s; }
 .fg-hero-4 { animation-delay: 0.35s; }
 .fg-hero-5 { animation-delay: 0.45s; }
+.fg-hero-6 { animation-delay: 0.55s; }
+
+/* Mono uppercase section eyebrow label. Pair with a text-* color utility — sets no color. */
+.fg-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
 
 /* Respect reduced-motion: show everything immediately, no movement. */
 @media (prefers-reduced-motion: reduce) {
