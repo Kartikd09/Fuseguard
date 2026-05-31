@@ -7,10 +7,13 @@
 import { useEffect, useRef } from "react";
 
 export default function FluidCursor() {
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Outer wrapper owns the fixed full-viewport positioning. The lib forces its
+  // container to position:relative + display:flex, so we hand it a dedicated inner
+  // div sized to 100% — otherwise it overrides our `fixed` and collapses the layout.
+  const innerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
+    const container = innerRef.current;
     if (container == null) return;
 
     // a11y + device guards — skip entirely when motion is unwanted or there's no cursor.
@@ -23,8 +26,8 @@ export default function FluidCursor() {
 
     // Dynamic import keeps the WebGL bundle out of the initial page load.
     void import("webgl-fluid-enhanced").then(({ default: WebGLFluidEnhanced }) => {
-      if (cancelled || containerRef.current == null) return;
-      const instance = new WebGLFluidEnhanced(containerRef.current);
+      if (cancelled || innerRef.current == null) return;
+      const instance = new WebGLFluidEnhanced(innerRef.current);
       instance.setConfig({
         // Brand-tinted dye on a transparent canvas so the grid + glow show through.
         colorPalette: ["#E84C30", "#F2795E", "#C73A22"],
@@ -60,10 +63,9 @@ export default function FluidCursor() {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      aria-hidden
-      className="pointer-events-none fixed inset-0 z-0"
-    />
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
+      {/* Lib sets this inner div to position:relative + flex and sizes the canvas to it. */}
+      <div ref={innerRef} className="h-full w-full" />
+    </div>
   );
 }
