@@ -1,7 +1,11 @@
-# Cloudflare Pages applies these headers to all responses. Mirrors the defense-in-depth
-# headers in next.config.ts headers() — next-on-pages does not reliably apply those on CF Pages,
-# so this _headers file is the authoritative source for the deployed dashboard.
-# Users paste a live Anthropic secret here, so these are not optional.
+# Static asset long-lived cache — OpenNext serves _next/static via the ASSETS binding.
+/_next/static/*
+  Cache-Control: public,max-age=31536000,immutable
+
+# Security headers applied to all application responses.
+# next.config.ts headers() is the runtime source; this file covers Workers-served responses
+# that bypass Next.js middleware (static assets are excluded above).
+# Users paste a live Anthropic secret here — these headers are not optional.
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

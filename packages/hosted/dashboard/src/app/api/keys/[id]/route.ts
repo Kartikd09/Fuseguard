@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 
-export const runtime = "edge";
 
 export async function DELETE(
   _request: Request,

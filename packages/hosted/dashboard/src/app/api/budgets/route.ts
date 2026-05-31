@@ -7,7 +7,6 @@ import type { BudgetScope, LimitType, BudgetWindow } from "@/types";
 import { resolveActiveOrgId } from "@/lib/data/queries";
 import { checkRateLimit } from "@/lib/rate-limit";
 
-export const runtime = "edge";
 
 interface CreateBudgetBody {
   scope: BudgetScope;

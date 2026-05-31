@@ -16,7 +16,6 @@ import { Shield, AlertTriangle, Ban, Info } from "lucide-react";
 
 export const metadata: Metadata = { title: "Budgets — FuseGuard" };
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 function budgetScopeLabel(budget: Budget, keyLabel?: string): string {
   if (budget.scope === "key") {

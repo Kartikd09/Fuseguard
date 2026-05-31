@@ -3,7 +3,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 // Only allow internal, single-slash paths — blocks open-redirect (//evil.com, /\evil.com,
 // absolute URLs). Anything else falls back to /dashboard.

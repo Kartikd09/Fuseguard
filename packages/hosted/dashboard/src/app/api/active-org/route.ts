@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 const COOKIE_NAME = "fg_active_org";
 // 30-day TTL; re-validated on every resolveActiveOrgId call regardless.

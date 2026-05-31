@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Billing — FuseGuard" };
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 const LEMON_SQUEEZY_CHECKOUT_URL =
   process.env["LEMON_SQUEEZY_CHECKOUT_URL"] ??

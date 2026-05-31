@@ -7,7 +7,6 @@ import { resolveActiveOrgId, fetchUserOrgs } from "@/lib/data/queries";
 import AppShell from "@/components/layout/AppShell";
 
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
 
 export default async function ProtectedLayout({
   children,
