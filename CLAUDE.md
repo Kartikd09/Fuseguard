@@ -48,6 +48,15 @@ advisory affects vite 6.0.0–6.4.1, we run 5.4.21 (dev-only test bundler, never
 attacker-controlled CSS (ours is static); npm `overrides` can't penetrate next's bundled copy —
 clears when next bumps it. Both build-time, not in shipped runtime, not exploitable in our usage.
 
+**DB hardening (migrations 0006–0010, applied to prod):** webhook RPC `apply_subscription_event`,
+rate-limit + grace-period pg_cron jobs, nullable telemetry FK, and migration 0010 revoked public
+REST `EXECUTE` on the 4 internal SECURITY DEFINER fns (`check_api_key_limit`, `handle_new_user`,
+`rls_auto_enable`, `check_rate_limit`) — Supabase advisor DEFINER warns cleared (10 → 2).
+Remaining 2 advisors are accept-risk: (a) **leaked-password protection** is Supabase **Pro-only**
+(we're free tier) and only applies to email+password — we're OAuth/magic-link primary, so moot;
+(b) `rate_limits` RLS-enabled-no-policy is **INFO/intentional** (table fully locked, service_role
+reaches it via grants). Re-run `mcp supabase get_advisors` after any DDL.
+
 ## Infrastructure
 
 | Service | Details |
