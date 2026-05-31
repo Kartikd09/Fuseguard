@@ -126,10 +126,8 @@ Open [http://localhost:3000](http://localhost:3000). Sign up — your org is aut
 
 ### 5. Configure the proxy Worker
 
-```bash
-cd packages/core
-cp wrangler.example.toml wrangler.toml   # if exists, else edit wrangler.toml directly
-```
+The proxy lives in `packages/core` and ships with a ready `wrangler.toml` (no account-specific
+values — your Cloudflare account comes from `wrangler login` / `CLOUDFLARE_ACCOUNT_ID`).
 
 For local dev, create `.dev.vars` in `packages/core`:
 
@@ -214,9 +212,13 @@ Full details: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 - **`packages/core/`** — MIT. The full proxy engine (budget DO, loop detection, crypto, pricing). Self-host this on your own Cloudflare.
 - **`packages/hosted/`** — Proprietary. The managed dashboard, billing, team features.
 
+> **Self-host today** runs on Cloudflare Workers (the budget engine relies on Durable Objects for
+> race-free enforcement). A Docker / bring-your-own-infra path is on the roadmap — open an issue
+> if that's a blocker for you.
+
 ## Tech Stack
 
-Cloudflare Workers + Durable Objects · Supabase (Postgres + Auth) · Next.js 15 · Tailwind · Lemon Squeezy · TypeScript
+Cloudflare Workers + Durable Objects · Supabase (Postgres + Auth) · Next.js 16 · Tailwind · Lemon Squeezy · TypeScript
 
 ---
 
